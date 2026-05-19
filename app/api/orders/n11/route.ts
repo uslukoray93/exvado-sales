@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getN11Client } from '@/lib/api/n11'
+import { getN11RestClient } from '@/lib/api/n11-rest'
 import { prisma } from '@/lib/prisma'
 import { Platform, OrderStatus } from '@prisma/client'
 
@@ -9,7 +9,7 @@ import { Platform, OrderStatus } from '@prisma/client'
  */
 export async function GET(request: NextRequest) {
   try {
-    const n11Client = getN11Client()
+    const n11Client = getN11RestClient()
 
     // Get query parameters
     const searchParams = request.nextUrl.searchParams
@@ -29,7 +29,9 @@ export async function GET(request: NextRequest) {
       ? new Date(lastSyncedOrder.updatedAt.getTime() - (1 * 24 * 60 * 60 * 1000)) // 1 gün öncesinden başla (güvenlik için)
       : new Date(Date.now() - (7 * 24 * 60 * 60 * 1000)) // İlk sync: son 7 gün
 
-    console.log(`🔄 N11 AKILLI SYNC: ${syncStartDate.toISOString()} tarihinden itibaren güncellemeler çekiliyor...`)
+    const endDate = new Date() // Şu an
+
+    console.log(`🔄 N11 AKILLI SYNC (REST API): ${syncStartDate.toISOString()} - ${endDate.toISOString()}`)
 
     // Sync orders to database
     const syncedOrders = []
@@ -69,32 +71,29 @@ export async function GET(request: NextRequest) {
         while (hasMorePages) {
           const response = await n11Client.getOrders({
             page: currentPage,
-            pageSize,
-            startDate: new Date(range.start).toISOString(),
-            endDate: new Date(range.end).toISOString()
+            size: pageSize,
+            startDate: range.start,
+            endDate: range.end,
+            orderByDirection: 'DESC'
           })
 
-          console.log(`  Page ${currentPage}: ${response.orders.length} orders (total in range: ${response.totalCount})`)
+          console.log(`  Page ${currentPage}: ${response.content?.length || 0} orders (total in range: ${response.totalElements || 0})`)
 
-          for (const order of response.orders) {
-            // Fetch full order details for each order
-            console.log(`  📦 Fetching details for order ${order.orderNumber}...`)
-            const fullOrderDetail = await n11Client.getOrderDetail(String(order.id))
-
-            // KRİTİK: orderNumber yoksa, liste response'ından al (duplicate önleme)
-            if (!fullOrderDetail.orderNumber && order.orderNumber) {
-              console.log(`  ⚠️  Order detail'de orderNumber yok, liste response'ından ekleniyor: ${order.orderNumber}`)
-              fullOrderDetail.orderNumber = order.orderNumber
-            }
+          for (const order of response.content || []) {
+            // REST API returns full data
+            console.log(`  📦 Processing order ${order.orderNumber}...`)
 
             try {
-              const syncedOrder = await syncOrder(fullOrderDetail)
+              const syncedOrder = await syncOrder(order)
               syncedOrders.push(syncedOrder)
             } catch (error: any) {
               if (error.message.includes('orderNumber')) {
                 console.error(`  ⚠️  Sipariş atlandı (orderNumber yok): ${order.id}`)
                 // Skip this order - don't add to syncedOrders
               } else {
+                // Log ALL errors before re-throwing
+                console.error(`  ❌ Sipariş sync hatası (${order.orderNumber || order.id}):`, error.message)
+                console.error('  Full error:', error)
                 throw error // Re-throw other errors
               }
             }
@@ -104,7 +103,7 @@ export async function GET(request: NextRequest) {
           currentPage++
 
           // Check if there are more pages
-          hasMorePages = currentPage * pageSize < response.totalCount
+          hasMorePages = currentPage < (response.totalPages || 0)
         }
       }
 
@@ -113,39 +112,36 @@ export async function GET(request: NextRequest) {
       // AKILLI SYNC: Sadece son sync'ten beri güncellenen siparişler
       const now = new Date()
 
-      const n11Orders = await n11Client.getOrders({
+      // REST API: startDate/endDate are timestamps in milliseconds (GMT+3)
+      const n11Response = await n11Client.getOrders({
         page,
-        pageSize,
-        startDate: syncStartDate.toISOString(),
-        endDate: now.toISOString()
+        size: pageSize,
+        startDate: syncStartDate.getTime(),
+        endDate: now.getTime(),
+        orderByDirection: 'DESC'
       })
-      totalOrders = n11Orders.totalCount
+      totalOrders = n11Response.totalElements || 0
 
-      console.log(`📊 ${n11Orders.orders.length} sipariş bulundu (son sync'ten beri)`)
+      console.log(`📊 ${n11Response.content?.length || 0} sipariş bulundu (son sync'ten beri)`)
 
-      for (const order of n11Orders.orders) {
-        // Fetch full order details for each order
-        console.log(`\n📦 Fetching details for order...`)
-        console.log(`  - List Response orderNumber: ${order.orderNumber || 'MISSING'}`)
-        console.log(`  - List Response id: ${order.id}`)
-
-        const fullOrderDetail = await n11Client.getOrderDetail(String(order.id))
-        console.log(`  - Detail Response orderNumber: ${fullOrderDetail.orderNumber || 'MISSING'}`)
-
-        // KRİTİK: orderNumber yoksa, liste response'ından al (duplicate önleme)
-        if (!fullOrderDetail.orderNumber && order.orderNumber) {
-          console.log(`⚠️  Order detail'de orderNumber yok, liste response'ından ekleniyor: ${order.orderNumber}`)
-          fullOrderDetail.orderNumber = order.orderNumber
-        } else if (!fullOrderDetail.orderNumber && !order.orderNumber) {
-          console.error(`❌ CRITICAL: Hem liste hem detail'de orderNumber YOK! order.id: ${order.id}`)
-        }
+      for (const order of n11Response.content || []) {
+        // REST API returns full order data - no need for detail call
+        console.log(`\n📦 Processing order ${order.orderNumber}...`)
+        console.log(`🔍 REST API Order Object Keys:`, Object.keys(order))
+        console.log(`🔍 REST API orderNumber value:`, order.orderNumber, `(type: ${typeof order.orderNumber})`)
 
         try {
-          const syncedOrder = await syncOrder(fullOrderDetail)
+          console.log(`🔍 BEFORE syncOrder call - order object:`, Object.keys(order), order.orderNumber)
+          const syncedOrder = await syncOrder(order)
           syncedOrders.push(syncedOrder)
         } catch (error: any) {
+          console.error(`❌ Sipariş sync hatası (${order.orderNumber || order.id}):`)
+          console.error(`  - Error message: ${error.message}`)
+          console.error(`  - Error name: ${error.name}`)
+          console.error(`  - Full error:`, error)
+
           if (error.message.includes('orderNumber')) {
-            console.error(`⚠️  Sipariş atlandı (orderNumber yok): ${order.id}`)
+            console.error(`⚠️  Sipariş atlandı (orderNumber sorunu)`)
             // Skip this order - don't add to syncedOrders
           } else {
             throw error // Re-throw other errors
@@ -187,11 +183,12 @@ async function fetchProductImages(order: any) {
     // Import image fetcher dynamically
     const { getProductImagesByStockCodes } = await import('@/lib/image-fetcher')
 
-    // Collect all stock codes from order items
+    // Collect all stock codes from order items/lines (REST API uses 'lines')
     const stockCodes: string[] = []
-    for (const item of order.items || []) {
-      if (item.productSellerCode) {
-        stockCodes.push(item.productSellerCode)
+    for (const line of order.lines || order.items || []) {
+      const stockCode = line.stockCode || line.productSellerCode
+      if (stockCode) {
+        stockCodes.push(stockCode)
       }
     }
 
@@ -202,14 +199,14 @@ async function fetchProductImages(order: any) {
     // Fetch images from XML
     const imageMap = await getProductImagesByStockCodes(stockCodes)
 
-    // Map images to item IDs (we use item ID as SKU in N11)
-    for (const item of order.items || []) {
-      const stockCode = item.productSellerCode
+    // Map images to item IDs (REST API uses 'lines' instead of 'items')
+    for (const line of order.lines || order.items || []) {
+      const stockCode = line.stockCode || line.productSellerCode
       if (stockCode) {
         const imageUrl = imageMap.get(stockCode)
         if (imageUrl) {
-          images[String(item.id)] = imageUrl
-          console.log(`✅ Found image for ${item.productName}: ${imageUrl}`)
+          images[String(line.orderLineId || line.id)] = imageUrl
+          console.log(`✅ Found image for ${line.productName}: ${imageUrl}`)
         }
       }
     }
@@ -246,9 +243,18 @@ async function syncOrder(order: any) {
 
   // Use shipment package ID as platformOrderId (needed for status updates)
   // KRİTİK: orderNumber OLMADAN sipariş oluşturma - duplicate riski!
+  console.log(`🔍 DEBUG - orderNumber kontrolü ÖNCE:`)
+  console.log(`  - orderNumber: ${order.orderNumber}`)
+  console.log(`  - hasOrderNumber: ${!!order.orderNumber}`)
+  console.log(`  - orderId: ${order.id}`)
+  console.log(`  - typeof order: ${typeof order}`)
+  console.log(`  - order constructor: ${order?.constructor?.name}`)
+  console.log(`  - Object.keys length: ${Object.keys(order || {}).length}`)
+
   if (!order.orderNumber) {
     console.error(`❌ UYARI: Sipariş orderNumber field'ı yok! order.id: ${order.id}`)
     console.error(`Bu sipariş SKIP ediliyor - duplicate riski var!`)
+    console.error(`Order object keys:`, Object.keys(order))
     throw new Error(`Order missing orderNumber field (id: ${order.id})`)
   }
 
@@ -262,46 +268,41 @@ async function syncOrder(order: any) {
     include: { items: true }
   })
 
-  // Map N11 status to our internal status
-  console.log(`🔍 N11 RAW Status for order ${order.orderNumber}: "${order.status}" (type: ${typeof order.status})`)
-  let mappedStatus = mapN11Status(order.status)
+  // Map N11 status to our internal status (REST API uses shipmentPackageStatus)
+  const rawStatus = order.shipmentPackageStatus || order.status
+  console.log(`🔍 N11 RAW Status for order ${order.orderNumber}: "${rawStatus}" (type: ${typeof rawStatus})`)
+  let mappedStatus = mapN11Status(rawStatus)
   console.log(`✅ Mapped to: ${mappedStatus}`)
 
-  // DEBUG: Log customer name source
+  // DEBUG: Log customer name source (REST API format)
   console.log(`👤 Customer Name Debug:`)
-  console.log(`  - buyer.fullName: ${order.buyer?.fullName || 'N/A'}`)
+  console.log(`  - customerfullName: ${order.customerfullName || 'N/A'}`)
   console.log(`  - shippingAddress.fullName: ${order.shippingAddress?.fullName || 'N/A'}`)
   console.log(`  - billingAddress.fullName: ${order.billingAddress?.fullName || 'N/A'}`)
 
-  // Get cargo company from shipmentInfo
-  const cargoCompany = mapN11CargoCompany(order.shipmentInfo?.shipmentCompany)
-
-  // KRİTİK FİX: Eğer tracking number varsa ama status APPROVED/PROCESSING ise, otomatik SHIPPED yap
-  const hasTrackingNumber = order.shipmentInfo?.trackingNumber && order.shipmentInfo.trackingNumber.trim() !== ''
-  if (hasTrackingNumber && (mappedStatus === OrderStatus.APPROVED || mappedStatus === OrderStatus.PROCESSING)) {
-    console.log(`🚚 Tracking number var (${order.shipmentInfo.trackingNumber}), status SHIPPED'e çevriliyor`)
-    mappedStatus = OrderStatus.SHIPPED
-  }
+  // Get cargo company (REST API has cargoProviderName directly)
+  const cargoCompany = mapN11CargoCompanyName(order.cargoProviderName)
 
   // AUTO-COMPLETE: 7+ günlük SHIPPED siparişleri otomatik DELIVERED yap
   // (N11 API bazen teslim edilen siparişleri güncellemez)
   if (mappedStatus === OrderStatus.SHIPPED) {
-    const orderDate = parseN11Date(order.createDate)
+    // REST API uses lastModifiedDate (timestamp)
+    const orderDate = new Date(order.lastModifiedDate)
     const daysSinceOrder = Math.floor((Date.now() - orderDate.getTime()) / (1000 * 60 * 60 * 24))
 
     if (daysSinceOrder >= 7) {
       console.log(`📦 Sipariş ${daysSinceOrder} gün önce kargoya verildi, otomatik DELIVERED yapılıyor`)
-      mappedStatus = OrderStatus.DELIVERED
+      mappedStatus = OrderStatus.SHIPPED
     }
   }
 
   // N11'de fatura kontrolü: Status 8, 9, 10 (Delivered) = Faturalı
-  // N11 API'sinde direkt invoice field yok, status ile belirliyoruz
-  const n11StatusNum = String(order.status)
-  const isInvoiced = ['8', '9', '10'].includes(n11StatusNum)
+  // REST API'de shipmentPackageStatus string: "Delivered"
+  const n11StatusStr = String(order.shipmentPackageStatus || order.status)
+  const isInvoiced = n11StatusStr === 'Delivered' || ['8', '9', '10'].includes(n11StatusStr)
 
   // 7+ günlük DELIVERED siparişler otomatik COMPLETED olur (N11 otomatik faturalıyor)
-  const orderDate = parseN11Date(order.createDate)
+  const orderDate = new Date(order.lastModifiedDate)
   const daysSinceOrder = Math.floor((Date.now() - orderDate.getTime()) / (1000 * 60 * 60 * 24))
   const autoCompleted = mappedStatus === OrderStatus.DELIVERED && daysSinceOrder >= 7
 
@@ -347,10 +348,10 @@ async function syncOrder(order: any) {
     update: {
       platformOrderId: platformOrderId, // Update edilebilir (bazen değişiyor)
       status: finalStatus,
-      customerName: (order as any).customerfullName || order.buyer?.fullName || order.shippingAddress?.fullName || 'Müşteri (N11 Gizli)',
-      customerPhone: order.buyer?.phone || 'Belirtilmemiş',
-      customerAddress: `${order.shippingAddress?.address || ''}, ${order.shippingAddress?.district || ''}, ${order.shippingAddress?.city || ''}`.trim() || 'Unknown',
-      trackingNumber: order.shipmentInfo?.trackingNumber || undefined,
+      customerName: order.customerfullName || order.shippingAddress?.fullName || 'Müşteri (N11 Gizli)',
+      customerPhone: order.shippingAddress?.gsm || 'Belirtilmemiş',
+      customerAddress: `${order.shippingAddress?.address || ''}, ${order.shippingAddress?.neighborhood || ''}, ${order.shippingAddress?.district || ''}, ${order.shippingAddress?.city || ''}`.trim() || 'Unknown',
+      trackingNumber: order.cargoTrackingNumber || undefined,
       cargoCompany: cargoCompany,
       commissionRate: 15, // N11 default commission
       invoiceUploaded: finalInvoiceStatus,
@@ -361,27 +362,27 @@ async function syncOrder(order: any) {
       orderNumber: `N11-${realOrderNumber}`,
       platform: Platform.N11,
       platformOrderId: platformOrderId,
-      customerName: (order as any).customerfullName || order.buyer?.fullName || order.shippingAddress?.fullName || 'Müşteri (N11 Gizli)',
-      customerPhone: order.buyer?.phone || 'Belirtilmemiş',
-      customerAddress: `${order.shippingAddress?.address || ''}, ${order.shippingAddress?.district || ''}, ${order.shippingAddress?.city || ''}`.trim() || 'Unknown',
+      customerName: order.customerfullName || order.shippingAddress?.fullName || 'Müşteri (N11 Gizli)',
+      customerPhone: order.shippingAddress?.gsm || 'Belirtilmemiş',
+      customerAddress: `${order.shippingAddress?.address || ''}, ${order.shippingAddress?.neighborhood || ''}, ${order.shippingAddress?.district || ''}, ${order.shippingAddress?.city || ''}`.trim() || 'Unknown',
       status: finalStatus,
       invoiceUploaded: finalInvoiceStatus,
-      orderDate: parseN11Date(order.createDate),
-      trackingNumber: order.shipmentInfo?.trackingNumber || undefined,
+      orderDate: new Date(order.lastModifiedDate),
+      trackingNumber: order.cargoTrackingNumber || undefined,
       cargoCompany: cargoCompany,
       commissionRate: 15, // N11 default commission
       shippingCost: 0, // Will be updated later
       items: {
-        create: order.items.map((item: any) => {
-          const imageUrl = productImages[String(item.id)]
+        create: (order.lines || []).map((line: any) => {
+          const imageUrl = productImages[String(line.orderLineId)]
           // ONLY set imageUrl if we actually have one - don't set null!
           const itemData: any = {
-            productName: item.productName,
-            stockCode: item.productSellerCode || null,
-            sku: String(item.id),
-            quantity: item.quantity,
+            productName: line.productName,
+            stockCode: line.stockCode || null,
+            sku: String(line.orderLineId),
+            quantity: line.quantity,
             purchasePrice: 0, // Will be updated manually
-            salePrice: item.price,
+            salePrice: line.price,
           }
           if (imageUrl) {
             itemData.imageUrl = imageUrl
@@ -410,10 +411,10 @@ async function syncOrder(order: any) {
       }
 
       // Görsel yoksa, XML'den çekmeye çalış
-      const newItem = order.items.find((i: any) => String(i.id) === dbItem.sku)
+      const newItem = order.lines.find((i: any) => String(i.orderLineId) === dbItem.sku)
       if (!newItem) continue
 
-      const imageUrl = productImages[String(newItem.id)]
+      const imageUrl = productImages[String(newItem.orderLineId)]
 
       if (imageUrl) {
         // Görsel bulundu, ekle
@@ -462,8 +463,17 @@ function mapN11Status(n11Status: string | number): OrderStatus {
     '12': OrderStatus.CANCELLED,
   }
 
-  // Text status codes (fallback)
+  // Text status codes (fallback + REST API format)
   const textMap: Record<string, OrderStatus> = {
+    // REST API statuses
+    'Created': OrderStatus.PENDING,  // Yeni sipariş - Onay bekliyor
+    'Picking': OrderStatus.PROCESSING,
+    'Shipped': OrderStatus.SHIPPED,
+    'Cancelled': OrderStatus.CANCELLED,
+    'Delivered': OrderStatus.DELIVERED,
+    'UnPacked': OrderStatus.CANCELLED,
+    'UnSupplied': OrderStatus.CANCELLED,
+    // Turkish statuses
     'Yeni': OrderStatus.PENDING,
     'Onaylandı': OrderStatus.APPROVED,
     'Onaylandi': OrderStatus.APPROVED,
@@ -504,3 +514,6 @@ function mapN11CargoCompany(n11CargoName: string | null | undefined): string {
   console.log(`⚠️ Unrecognized N11 cargo company: ${n11CargoName}, defaulting to aras-kargo`)
   return 'aras-kargo'
 }
+
+// Alias for REST API (cargoProviderName)
+const mapN11CargoCompanyName = mapN11CargoCompany

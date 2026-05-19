@@ -171,10 +171,14 @@ async function syncOrder(order: any, trendyolClient?: any) {
 
   // Use orderNumber as platformOrderId since orderId might be undefined
   const platformOrderId = String(order.orderId || order.orderNumber)
+  const orderNumber = `TY-${order.orderNumber}`
 
   // Check if order already exists
-  const existingOrder = await prisma.order.findUnique({
-    where: { platformOrderId: platformOrderId },
+  const existingOrder = await prisma.order.findFirst({
+    where: {
+      orderNumber: orderNumber,
+      platform: Platform.TRENDYOL
+    },
     select: { status: true }
   })
 
@@ -198,7 +202,7 @@ async function syncOrder(order: any, trendyolClient?: any) {
 
   const dbOrder = await prisma.order.upsert({
     where: {
-      platformOrderId: platformOrderId,
+      orderNumber: orderNumber,
     },
     update: {
       ...(shouldUpdateStatus && { status: finalStatus }),

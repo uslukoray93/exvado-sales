@@ -290,11 +290,12 @@ const getPlatformWorkflow = (platform: Platform) => {
         steps: ["pending", "processing", "ready_to_ship", "shipped", "delivered", "completed"],
       }
     case "n11":
-      // N11: Beklemede -> Onayla -> Hazırlanıyor -> Kargoya Verildi -> Teslim Edildi -> Fatura Yükle
+      // N11: Beklemede -> Hazırlanıyor -> Kargoya Verildi -> Teslim Edildi -> Fatura Yükle
+      // N11 REST API only supports Picking status, no separate Approved step
       return {
-        hasApprovalStep: true,
+        hasApprovalStep: false,
         requiresInvoice: true,
-        steps: ["pending", "approved", "processing", "shipped", "delivered", "completed"],
+        steps: ["pending", "processing", "shipped", "delivered", "completed"],
       }
     case "hepsiburada":
       // Hepsiburada: Beklemede -> Onayla -> İşleme Al -> Kargoya Verildi -> Teslim Edildi -> Fatura Yükle

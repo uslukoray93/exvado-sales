@@ -8,10 +8,10 @@ datasource db {
 }
 
 model Order {
-  id                 String      @id
+  id                 String      @id @default(cuid())
   orderNumber        String      @unique
   platform           Platform
-  platformOrderId    String      @unique
+  platformOrderId    String
   customerName       String
   customerPhone      String
   customerAddress    String
@@ -23,7 +23,7 @@ model Order {
   invoiceUrl         String?
   notes              String?
   createdAt          DateTime    @default(now())
-  updatedAt          DateTime
+  updatedAt          DateTime    @updatedAt
   agreedDeliveryDate DateTime?
   cargoCompany       String?
   invoiceDate        DateTime?
@@ -37,7 +37,7 @@ model Order {
 }
 
 model OrderItem {
-  id            String   @id
+  id            String   @id @default(cuid())
   orderId       String
   productName   String
   sku           String
@@ -45,7 +45,7 @@ model OrderItem {
   purchasePrice Float
   salePrice     Float
   createdAt     DateTime @default(now())
-  updatedAt     DateTime
+  updatedAt     DateTime @updatedAt
   stockCode     String?
   imageUrl      String?
   Order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
