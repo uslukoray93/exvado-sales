@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useMemo } from "react"
+import React, { useState, useMemo, useEffect } from "react"
 import { MainLayout } from "@/components/layout/main-layout"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -48,10 +48,12 @@ import {
   ChevronRight,
   ChevronDown,
   User,
+  Loader2,
 } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import Image from "next/image"
+import { useToast } from "@/hooks/use-toast"
 
 // Platform type
 type Platform = "trendyol" | "n11" | "hepsiburada" | "bolbolbul"
@@ -159,7 +161,8 @@ const SAMPLE_QUESTIONS: Question[] = [
 ]
 
 export default function OrderQuestionsPage() {
-  const [questions, setQuestions] = useState<Question[]>(SAMPLE_QUESTIONS)
+  const { toast } = useToast()
+  const [questions, setQuestions] = useState<Question[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [platformFilter, setPlatformFilter] = useState<string>("all")
   const [activeTab, setActiveTab] = useState<string>("pending")
@@ -167,8 +170,104 @@ export default function OrderQuestionsPage() {
     open: false,
     question: null,
   })
-  const [answerText, setAnswerText] = useState("")
+  const [answerText, setAnswerText] = useState("Merhaba efendim,\n\nKeyifli alışverişler dileriz.")
   const [expandedQuestions, setExpandedQuestions] = useState<Set<string>>(new Set())
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+
+  // Fetch Trendyol questions
+  const fetchTrendyolQuestions = async () => {
+    try {
+      const response = await fetch('/api/questions/trendyol?status=WAITING_FOR_ANSWER')
+      if (!response.ok) throw new Error('Sorular çekilemedi')
+
+      const data = await response.json()
+
+      // Trendyol sorularını Question formatına çevir
+      const trendyolQuestions: Question[] = data.content.map((q: any) => ({
+        id: `trendyol-${q.id}`,
+        platform: 'trendyol' as Platform,
+        productName: q.productName,
+        productSku: q.productMainId || q.barcode || 'N/A',
+        customerName: q.userName || q.showUserName ? q.userName : `Müşteri #${q.customerId}`,
+        question: q.text,
+        answer: q.status === 'ANSWERED' && q.answer ? q.answer : null,
+        status: q.status === 'WAITING_FOR_ANSWER' ? 'pending' as QuestionStatus : 'answered' as QuestionStatus,
+        askedDate: new Date(q.creationDate).toLocaleString('tr-TR'),
+        answeredDate: q.answerDate ? new Date(q.answerDate).toLocaleString('tr-TR') : null,
+      }))
+
+      // Mevcut sorulardan Trendyol dışındakileri koru, yeni Trendyol sorularını ekle
+      setQuestions(prev => [...prev.filter(q => q.platform !== 'trendyol'), ...trendyolQuestions])
+
+      console.log(`✅ ${trendyolQuestions.length} Trendyol sorusu yüklendi`)
+    } catch (error: any) {
+      console.error('Trendyol soruları çekilemedi:', error)
+      toast({
+        title: 'Hata',
+        description: error.message || 'Sorular yüklenemedi',
+        variant: 'destructive',
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Fetch N11 questions
+  const fetchN11Questions = async () => {
+    try {
+      const response = await fetch('/api/questions/n11')
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || `HTTP ${response.status}: N11 soruları çekilemedi`)
+      }
+
+      const data = await response.json()
+
+      // N11 SOAP response yapısı: productQuestions > productQuestion
+      const questionArray = data.productQuestions?.productQuestion || []
+      const questions = Array.isArray(questionArray) ? questionArray : [questionArray]
+
+      const n11Questions: Question[] = questions.map((q: any) => ({
+        id: `n11-${q.id}`,
+        platform: 'n11' as Platform,
+        productName: q.productTitle || 'Bilinmeyen Ürün',
+        productSku: String(q.productId || 'N/A'),
+        customerName: q.questionSubject || 'Müşteri Sorusu',
+        question: q.question || '',
+        answer: q.answer || null,
+        status: q.answer ? 'answered' as QuestionStatus : 'pending' as QuestionStatus,
+        askedDate: q.questionDate ? new Date(q.questionDate).toLocaleString('tr-TR') : 'Tarih bilinmiyor',
+        answeredDate: q.answerDate ? new Date(q.answerDate).toLocaleString('tr-TR') : null,
+      }))
+
+      // Mevcut sorulara N11 sorularını ekle
+      setQuestions(prev => [...prev.filter(q => q.platform !== 'n11'), ...n11Questions])
+
+      console.log(`✅ ${n11Questions.length} N11 sorusu yüklendi`)
+    } catch (error: any) {
+      console.error('N11 soruları çekilemedi:', error)
+      toast({
+        title: 'Hata',
+        description: error.message || 'N11 soruları yüklenemedi',
+        variant: 'destructive',
+      })
+    }
+  }
+
+  // Load Trendyol and N11 questions on mount
+  useEffect(() => {
+    const loadQuestions = async () => {
+      setLoading(true)
+      // Fetch in parallel but handle errors independently
+      await Promise.allSettled([
+        fetchTrendyolQuestions(),
+        fetchN11Questions()
+      ])
+      setLoading(false)
+    }
+    loadQuestions()
+  }, [])
 
   // Toggle question expansion
   const toggleQuestion = (questionId: string) => {
@@ -182,22 +281,111 @@ export default function OrderQuestionsPage() {
   }
 
   // Answer question
-  const handleAnswerQuestion = () => {
+  const handleAnswerQuestion = async () => {
     if (!answerSheet.question || !answerText.trim()) return
 
-    setQuestions(questions.map(q =>
-      q.id === answerSheet.question!.id
-        ? {
-            ...q,
-            answer: answerText,
-            status: "answered" as QuestionStatus,
-            answeredDate: new Date().toISOString().replace('T', ' ').substring(0, 16),
-          }
-        : q
-    ))
+    // N11 sorusuysa API'ye gönder
+    if (answerSheet.question.platform === 'n11') {
+      setSubmitting(true)
+      try {
+        const questionId = parseInt(answerSheet.question.id.replace('n11-', ''))
+
+        const response = await fetch('/api/questions/n11', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ questionId, answerText }),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}))
+          throw new Error(errorData.error || 'Cevap gönderilemedi')
+        }
+
+        toast({
+          title: 'Başarılı',
+          description: 'Cevabınız N11\'e gönderildi',
+        })
+
+        // Soruyu güncelle
+        setQuestions(questions.map(q =>
+          q.id === answerSheet.question!.id
+            ? {
+                ...q,
+                answer: answerText,
+                status: "answered" as QuestionStatus,
+                answeredDate: new Date().toISOString().replace('T', ' ').substring(0, 16),
+              }
+            : q
+        ))
+      } catch (error: any) {
+        console.error('Cevap gönderilemedi:', error)
+        toast({
+          title: 'Hata',
+          description: error.message || 'Cevap gönderilemedi',
+          variant: 'destructive',
+        })
+        return
+      } finally {
+        setSubmitting(false)
+      }
+    }
+    // Trendyol sorusuysa API'ye gönder
+    else if (answerSheet.question.platform === 'trendyol') {
+      setSubmitting(true)
+      try {
+        const questionId = parseInt(answerSheet.question.id.replace('trendyol-', ''))
+
+        const response = await fetch('/api/questions/trendyol', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ questionId, answerText }),
+        })
+
+        if (!response.ok) throw new Error('Cevap gönderilemedi')
+
+        toast({
+          title: 'Başarılı',
+          description: 'Cevabınız Trendyol\'a gönderildi',
+        })
+
+        // Soruyu güncelle
+        setQuestions(questions.map(q =>
+          q.id === answerSheet.question!.id
+            ? {
+                ...q,
+                answer: answerText,
+                status: "answered" as QuestionStatus,
+                answeredDate: new Date().toISOString().replace('T', ' ').substring(0, 16),
+              }
+            : q
+        ))
+      } catch (error: any) {
+        console.error('Cevap gönderilemedi:', error)
+        toast({
+          title: 'Hata',
+          description: error.message || 'Cevap gönderilemedi',
+          variant: 'destructive',
+        })
+        return
+      } finally {
+        setSubmitting(false)
+      }
+    } else {
+      // Diğer platformlar için sadece local güncelleme
+      setQuestions(questions.map(q =>
+        q.id === answerSheet.question!.id
+          ? {
+              ...q,
+              answer: answerText,
+              status: "answered" as QuestionStatus,
+              answeredDate: new Date().toISOString().replace('T', ' ').substring(0, 16),
+            }
+          : q
+      ))
+    }
 
     setAnswerSheet({ open: false, question: null })
-    setAnswerText("")
+    setAnswerText("Merhaba efendim,\n\nKeyifli alışverişler dileriz.")
   }
 
   // Filter questions by tab
@@ -285,9 +473,21 @@ export default function OrderQuestionsPage() {
               variant="outline"
               size="sm"
               className="text-xs"
-              onClick={() => window.location.reload()}
+              onClick={async () => {
+                setLoading(true)
+                await Promise.allSettled([
+                  fetchTrendyolQuestions(),
+                  fetchN11Questions()
+                ])
+                setLoading(false)
+              }}
+              disabled={loading}
             >
-              <RefreshCw className="h-4 w-4 mr-2" />
+              {loading ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-2" />
+              )}
               Yenile
             </Button>
             <Button
@@ -366,20 +566,31 @@ export default function OrderQuestionsPage() {
             {/* Questions Table */}
             <Card className="shadow-sm dark:bg-gray-800 dark:border-gray-700">
               <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-white dark:bg-gray-900 border-b dark:border-gray-700">
-                      <TableHead className="font-medium text-gray-700 dark:text-gray-200 text-xs h-10 py-2 w-[40px]"></TableHead>
-                      <TableHead className="font-medium text-gray-700 dark:text-gray-200 text-xs h-10 py-2 w-[100px]">Platform</TableHead>
-                      <TableHead className="font-medium text-gray-700 dark:text-gray-200 text-xs h-10 py-2">Ürün</TableHead>
-                      <TableHead className="font-medium text-gray-700 dark:text-gray-200 text-xs h-10 py-2">Müşteri</TableHead>
-                      <TableHead className="font-medium text-gray-700 dark:text-gray-200 text-xs h-10 py-2">Tarih</TableHead>
-                      <TableHead className="font-medium text-gray-700 dark:text-gray-200 text-xs h-10 py-2 text-center">Durum</TableHead>
-                      <TableHead className="font-medium text-gray-700 dark:text-gray-200 text-xs h-10 py-2 text-center w-[100px]">İşlem</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredQuestions.map((question) => {
+                {loading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                    <span className="ml-3 text-sm text-gray-600 dark:text-gray-400">Sorular yükleniyor...</span>
+                  </div>
+                ) : filteredQuestions.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <MessageSquare className="h-12 w-12 text-gray-300 dark:text-gray-600 mb-3" />
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Henüz soru bulunmuyor</p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-white dark:bg-gray-900 border-b dark:border-gray-700">
+                        <TableHead className="font-medium text-gray-700 dark:text-gray-200 text-xs h-10 py-2 w-[40px]"></TableHead>
+                        <TableHead className="font-medium text-gray-700 dark:text-gray-200 text-xs h-10 py-2 w-[100px]">Platform</TableHead>
+                        <TableHead className="font-medium text-gray-700 dark:text-gray-200 text-xs h-10 py-2">Ürün</TableHead>
+                        <TableHead className="font-medium text-gray-700 dark:text-gray-200 text-xs h-10 py-2">Müşteri</TableHead>
+                        <TableHead className="font-medium text-gray-700 dark:text-gray-200 text-xs h-10 py-2">Tarih</TableHead>
+                        <TableHead className="font-medium text-gray-700 dark:text-gray-200 text-xs h-10 py-2 text-center">Durum</TableHead>
+                        <TableHead className="font-medium text-gray-700 dark:text-gray-200 text-xs h-10 py-2 text-center w-[100px]">İşlem</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredQuestions.map((question) => {
                       const isExpanded = expandedQuestions.has(question.id)
 
                       return (
@@ -435,7 +646,7 @@ export default function OrderQuestionsPage() {
                                   className="text-xs h-7"
                                   onClick={() => {
                                     setAnswerSheet({ open: true, question })
-                                    setAnswerText("")
+                                    setAnswerText("Merhaba efendim,\n\nKeyifli alışverişler dileriz.")
                                   }}
                                 >
                                   <Send className="h-3 w-3 mr-1.5" />
@@ -495,8 +706,9 @@ export default function OrderQuestionsPage() {
                         </React.Fragment>
                       )
                     })}
-                  </TableBody>
-                </Table>
+                    </TableBody>
+                  </Table>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -553,18 +765,28 @@ export default function OrderQuestionsPage() {
 
                 {/* Answer Input */}
                 <div>
-                  <Label htmlFor="answer" className="text-xs text-gray-700 dark:text-gray-300 mb-2 block">
-                    Cevabınız
-                  </Label>
+                  <div className="flex items-center justify-between mb-2">
+                    <Label htmlFor="answer" className="text-xs text-gray-700 dark:text-gray-300">
+                      Cevabınız
+                    </Label>
+                    <span className={`text-xs ${answerText.length < 10 || answerText.length > 2000 ? 'text-red-500' : 'text-gray-500'}`}>
+                      {answerText.length}/2000 karakter
+                    </span>
+                  </div>
                   <Textarea
                     id="answer"
-                    placeholder="Müşteriye gönderilecek cevabı yazın..."
+                    placeholder="Müşteriye gönderilecek cevabı yazın (minimum 10 karakter)..."
                     value={answerText}
                     onChange={(e) => setAnswerText(e.target.value)}
                     className="min-h-[120px] text-sm"
+                    maxLength={2000}
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                    Cevabınız {answerSheet.question.platform} platformunda müşteriye otomatik gönderilecektir.
+                    {answerSheet.question.platform === 'trendyol' ? (
+                      <>Cevap metni 10-2000 karakter arasında olmalıdır. Cevabınız Trendyol'da otomatik yayınlanacaktır.</>
+                    ) : (
+                      <>Cevabınız {answerSheet.question.platform} platformunda müşteriye otomatik gönderilecektir.</>
+                    )}
                   </p>
                 </div>
 
@@ -579,11 +801,24 @@ export default function OrderQuestionsPage() {
                   </Button>
                   <Button
                     onClick={handleAnswerQuestion}
-                    disabled={!answerText.trim()}
+                    disabled={
+                      !answerText.trim() ||
+                      submitting ||
+                      (answerSheet.question?.platform === 'trendyol' && (answerText.length < 10 || answerText.length > 2000))
+                    }
                     className="flex-1"
                   >
-                    <Send className="h-4 w-4 mr-2" />
-                    Cevabı Gönder
+                    {submitting ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Gönderiliyor...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="h-4 w-4 mr-2" />
+                        Cevabı Gönder
+                      </>
+                    )}
                   </Button>
                 </div>
               </div>

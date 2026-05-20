@@ -532,18 +532,32 @@ class TicimaxSOAPClient {
    */
   async setSiparisDurum(orderId: number, statusId: number, orderNumber?: string): Promise<void> {
     try {
-      // Map statusId to Ticimax enum string
+      // Map statusId to Ticimax enum string (as per Ticimax support response)
+      // CRITICAL: Durum field must be STRING, not integer!
       const durumMap: Record<number, string> = {
-        0: 'OnSiparis',          // Ön sipariş
-        1: 'OnayBekliyor',       // Onay bekliyor
-        2: 'Onaylandi',          // Onaylandı
-        3: 'OdemeBekliyor',      // Ödeme bekliyor
-        4: 'Paketleniyor',       // Paketleniyor
-        5: 'TedarikEdiliyor',    // Tedarik ediliyor
-        6: 'KargoyaVerildi',     // Kargoya verildi
-        7: 'TeslimEdildi',       // Teslim edildi
-        8: 'Iptal',              // İptal edildi
-        9: 'Iade',               // İade edildi
+        0: 'OnSiparis',                    // Ön sipariş
+        1: 'OnayBekliyor',                 // Onay bekliyor
+        2: 'Onaylandi',                    // Onaylandı
+        3: 'OdemeBekliyor',                // Ödeme bekliyor
+        4: 'Paketleniyor',                 // Paketleniyor
+        5: 'TedarikEdiliyor',              // Tedarik ediliyor
+        6: 'KargoyaVerildi',               // Kargoya verildi
+        7: 'TeslimEdildi',                 // Teslim edildi
+        8: 'Iptal',                        // İptal edildi
+        9: 'Iade',                         // İade edildi
+        10: 'Silinmis',                    // Silinmiş
+        11: 'IadeTalepAlindi',             // İade talebi alındı
+        12: 'IadeUlastiOdemeYapilacak',    // İade ulaştı ödeme yapılacak
+        13: 'IadeOdemeYapildi',            // İade ödemesi yapıldı
+        14: 'TeslimOncesiIptal',           // Teslimat öncesi iptal talebi
+        15: 'IptalTalebi',                 // İptal talebi
+        16: 'KismiIadeTalebi',             // Kısmi iade talebi
+        17: 'KismiIadeYapildi',            // Kısmi iade yapıldı
+        18: 'TeslimEdilemedi',             // Teslim edilemedi
+        19: 'MagazayaGonderildi',          // Mağazaya gönderildi
+        20: 'MagazayaUlasti',              // Mağazaya ulaştı
+        21: 'MagazadaTeslimBekliyor',      // Mağazada teslim bekliyor
+        22: 'CuzdanaIade',                 // Cüzdana iade
       }
 
       const durumString = durumMap[statusId]
@@ -551,23 +565,22 @@ class TicimaxSOAPClient {
         throw new Error(`Invalid status ID: ${statusId}`)
       }
 
-      // Build request with correct namespaces
-      // Service namespace: http://tempuri.org/
-      // Data contract namespace: http://schemas.datacontract.org/2004/07/
+      // Build request as per Ticimax support example
+      // CRITICAL FIX: Use xmlns:ns (not xmlns:a) and send STRING value (not integer)
       const soapBody = `<tem:SetSiparisDurum xmlns:tem="http://tempuri.org/">
   <tem:UyeKodu>${this.wsAuthCode}</tem:UyeKodu>
-  <tem:request xmlns:a="http://schemas.datacontract.org/2004/07/">
-    <a:SiparisID>${orderId}</a:SiparisID>
-    ${orderNumber ? `<a:SiparisNo>${orderNumber}</a:SiparisNo>` : ''}
-    <a:Durum>${durumString}</a:Durum>
+  <tem:request xmlns:ns="http://schemas.datacontract.org/2004/07/">
+    <ns:Durum>${durumString}</ns:Durum>
+    <ns:SiparisID>${orderId}</ns:SiparisID>
   </tem:request>
 </tem:SetSiparisDurum>`
 
-      console.log(`📤 Ticimax SetSiparisDurum request for order ${orderId} (${orderNumber || 'no number'}), status ${statusId} (${durumString})`)
+      console.log(`📤 Ticimax SetSiparisDurum request for order ${orderId} (${orderNumber || 'no number'}), status ${statusId} → "${durumString}"`)
+      console.log(`📋 SOAP Body:\n${soapBody}`)
 
       await this.makeSoapRequest('SetSiparisDurum', soapBody)
 
-      console.log(`✅ Order ${orderId} status updated to ${durumString}`)
+      console.log(`✅ Order ${orderId} status updated to "${durumString}"`)
     } catch (error: any) {
       console.error('❌ Ticimax SetSiparisDurum error:', error.message)
       throw new Error(`Ticimax API Error: ${error.message}`)

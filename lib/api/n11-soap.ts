@@ -280,6 +280,113 @@ export class N11SoapClient {
       })
     })
   }
+
+  /**
+   * Get product question list (müşteri sorularını listele)
+   * @param page - Sayfa numarası (opsiyonel)
+   * @param pageSize - Sayfa boyutu (varsayılan: 100)
+   */
+  async getProductQuestionList(page?: number, pageSize?: number): Promise<any> {
+    const wsdlUrl = 'https://api.n11.com/ws/ProductService.wsdl'
+
+    return new Promise((resolve, reject) => {
+      soap.createClient(wsdlUrl, (err, client) => {
+        if (err) {
+          console.error('SOAP client error:', err)
+          return reject(err)
+        }
+
+        const args: any = {
+          auth: {
+            appKey: this.apiKey,
+            appSecret: this.apiSecret,
+          },
+          // REQUIRED: productQuestionSearch must be included (can be empty object or with filters)
+          productQuestionSearch: {
+            status: 'OPEN', // Filter for unanswered questions
+          },
+          pagingData: {
+            currentPage: page !== undefined ? page : 0,
+            pageSize: pageSize || 100,
+          },
+        }
+
+        console.log('GetProductQuestionList args:', JSON.stringify(args, null, 2))
+
+        client.GetProductQuestionList(args, (err: any, result: any) => {
+          if (err) {
+            console.error('GetProductQuestionList error:', err)
+            return reject(err)
+          }
+
+          console.log('GetProductQuestionList result:', JSON.stringify(result, null, 2))
+
+          if (result.result?.status !== 'success') {
+            console.error('GetProductQuestionList failed:', result.result)
+            return reject(new Error(result.result?.errorMessage || 'Failed to get product questions'))
+          }
+
+          resolve(result)
+        })
+      })
+    })
+  }
+
+  /**
+   * Save product answer (müşteri sorusunu cevapla)
+   * @param questionId - Soru ID
+   * @param answerText - Cevap metni
+   */
+  async saveProductAnswer(questionId: number, answerText: string): Promise<void> {
+    const wsdlUrl = 'https://api.n11.com/ws/ProductService.wsdl'
+
+    return new Promise((resolve, reject) => {
+      soap.createClient(wsdlUrl, (err, client) => {
+        if (err) {
+          console.error('SOAP client error:', err)
+          return reject(err)
+        }
+
+        // WSDL'de parametre yapısı: productQuestionId ve answer direkt olarak gönderilmeli
+        const args = {
+          auth: {
+            appKey: this.apiKey,
+            appSecret: this.apiSecret,
+          },
+          productQuestionId: questionId,
+          answer: answerText,
+        }
+
+        console.log('SaveProductAnswer args:', JSON.stringify(args, null, 2))
+
+        client.SaveProductAnswer(args, (err: any, result: any) => {
+          if (err) {
+            console.error('SaveProductAnswer error:', err)
+            return reject(err)
+          }
+
+          console.log('SaveProductAnswer result:', JSON.stringify(result, null, 2))
+
+          if (result.result?.status !== 'success') {
+            console.error('SaveProductAnswer failed:', result.result)
+
+            let errorMessage = result.result?.errorMessage || 'Failed to save answer'
+
+            // Translate common N11 errors
+            if (result.result?.errorCode === 'SELLER_API.alreadyAnswered') {
+              errorMessage = 'Bu soru zaten cevaplanmış'
+            } else if (result.result?.errorCode === 'SELLER_API.notFound') {
+              errorMessage = 'Soru bulunamadı'
+            }
+
+            return reject(new Error(errorMessage))
+          }
+
+          resolve()
+        })
+      })
+    })
+  }
 }
 
 /**

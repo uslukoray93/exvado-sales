@@ -31,6 +31,30 @@ export interface TrendyolOrdersResponse {
   totalElements: number
 }
 
+export interface TrendyolQuestion {
+  id: number
+  customerId: number
+  customerName: string
+  creationDate: number
+  text: string
+  imageUrl?: string
+  productId: string
+  productName: string
+  answered: boolean
+  answer?: {
+    text: string
+    answerDate: number
+  }
+}
+
+export interface TrendyolQuestionsResponse {
+  content: TrendyolQuestion[]
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
+}
+
 class TrendyolAPIClient {
   private client: AxiosInstance
   private apiKey: string
@@ -347,6 +371,105 @@ class TrendyolAPIClient {
         console.error('Response Status:', error.response.status)
         console.error('Response Data:', JSON.stringify(error.response.data, null, 2))
       }
+      throw new Error(`Trendyol API Error: ${error.response?.data?.message || error.message}`)
+    }
+  }
+
+  /**
+   * Get customer questions from Trendyol
+   * @param options - Query options (page, size, status filter, date range)
+   */
+  async getQuestions(options?: {
+    page?: number
+    size?: number
+    status?: 'WAITING_FOR_ANSWER' | 'ANSWERED' | 'REPORTED' | 'REJECTED' | 'UNANSWERED'
+    startDate?: number // timestamp in milliseconds
+    endDate?: number // timestamp in milliseconds
+  }): Promise<TrendyolQuestionsResponse> {
+    try {
+      // Integration API için client oluştur
+      const integrationClient = axios.create({
+        baseURL: 'https://apigw.trendyol.com/integration/qna',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': `${this.supplierId} - ExvadoSales`,
+        },
+        auth: {
+          username: this.apiKey,
+          password: this.apiSecret,
+        },
+      })
+
+      const params: any = {
+        supplierId: this.supplierId,
+        page: options?.page || 0,
+        size: options?.size || 50,
+      }
+
+      // Tarih aralığı (varsayılan: son 2 hafta)
+      if (options?.startDate) {
+        params.startDate = options.startDate
+      } else {
+        params.startDate = Date.now() - 14 * 24 * 60 * 60 * 1000 // 2 weeks ago
+      }
+
+      if (options?.endDate) {
+        params.endDate = options.endDate
+      } else {
+        params.endDate = Date.now()
+      }
+
+      if (options?.status) {
+        params.status = options.status
+      }
+
+      const response = await integrationClient.get(
+        `/sellers/${this.supplierId}/questions/filter`,
+        { params }
+      )
+
+      return response.data
+    } catch (error: any) {
+      console.error('Trendyol API Error:', error.response?.data || error.message)
+      throw new Error(`Trendyol API Error: ${error.response?.data?.message || error.message}`)
+    }
+  }
+
+  /**
+   * Answer a customer question
+   * @param questionId - Question ID
+   * @param answerText - Answer text (10-2000 characters)
+   */
+  async answerQuestion(questionId: number, answerText: string): Promise<void> {
+    try {
+      // Validate answer text length
+      if (answerText.length < 10 || answerText.length > 2000) {
+        throw new Error('Cevap metni 10-2000 karakter arasında olmalıdır')
+      }
+
+      // Integration API için client oluştur
+      const integrationClient = axios.create({
+        baseURL: 'https://apigw.trendyol.com/integration/qna',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': `${this.supplierId} - ExvadoSales`,
+        },
+        auth: {
+          username: this.apiKey,
+          password: this.apiSecret,
+        },
+      })
+
+      const response = await integrationClient.post(
+        `/sellers/${this.supplierId}/questions/${questionId}/answers`,
+        {
+          text: answerText
+        }
+      )
+
+      console.log('✅ Trendyol sorusu cevaplandı:', response.data)
+    } catch (error: any) {
+      console.error('Trendyol API Error:', error.response?.data || error.message)
       throw new Error(`Trendyol API Error: ${error.response?.data?.message || error.message}`)
     }
   }
