@@ -271,9 +271,9 @@ class BolbolbulAPIClient {
   /**
    * Update order status
    */
-  async updateOrderStatus(orderId: string, statusId: number): Promise<void> {
+  async updateOrderStatus(orderId: string, statusId: number, orderNumber?: string): Promise<void> {
     try {
-      await this.ticimaxClient.setSiparisDurum(parseInt(orderId), statusId)
+      await this.ticimaxClient.setSiparisDurum(parseInt(orderId), statusId, orderNumber)
     } catch (error: any) {
       console.error('Bolbolbul API Error:', error.message)
       throw new Error(`Bolbolbul API Error: ${error.message}`)

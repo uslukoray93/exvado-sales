@@ -528,8 +528,9 @@ class TicimaxSOAPClient {
    * Set order status
    * @param orderId - Ticimax Order ID
    * @param statusId - Status ID (1=Pending, 2=Processing, 3=Shipped, 4=Delivered, 5=Cancelled)
+   * @param orderNumber - Order Number (optional, but recommended for reliability)
    */
-  async setSiparisDurum(orderId: number, statusId: number): Promise<void> {
+  async setSiparisDurum(orderId: number, statusId: number, orderNumber?: string): Promise<void> {
     try {
       // Map statusId to Ticimax enum string
       const durumMap: Record<number, string> = {
@@ -550,15 +551,19 @@ class TicimaxSOAPClient {
         throw new Error(`Invalid status ID: ${statusId}`)
       }
 
+      // Build request with correct namespaces
+      // Service namespace: http://tempuri.org/
+      // Data contract namespace: http://schemas.datacontract.org/2004/07/
       const soapBody = `<tem:SetSiparisDurum xmlns:tem="http://tempuri.org/">
   <tem:UyeKodu>${this.wsAuthCode}</tem:UyeKodu>
-  <tem:request>
-    <tem:SiparisID>${orderId}</tem:SiparisID>
-    <tem:Durum>${durumString}</tem:Durum>
+  <tem:request xmlns:a="http://schemas.datacontract.org/2004/07/">
+    <a:SiparisID>${orderId}</a:SiparisID>
+    ${orderNumber ? `<a:SiparisNo>${orderNumber}</a:SiparisNo>` : ''}
+    <a:Durum>${durumString}</a:Durum>
   </tem:request>
 </tem:SetSiparisDurum>`
 
-      console.log(`📤 Ticimax SetSiparisDurum request for order ${orderId}, status ${statusId} (${durumString})`)
+      console.log(`📤 Ticimax SetSiparisDurum request for order ${orderId} (${orderNumber || 'no number'}), status ${statusId} (${durumString})`)
 
       await this.makeSoapRequest('SetSiparisDurum', soapBody)
 

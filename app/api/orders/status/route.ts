@@ -118,8 +118,16 @@ export async function PATCH(request: NextRequest) {
 
         const bolbolbulClient = getBolbolbulClient()
 
-        // Update order status via Ticimax SOAP
-        await bolbolbulClient.updateOrderStatus(order.platformOrderId, parseInt(platformStatus))
+        // Extract actual order number (remove BBB- prefix)
+        const actualOrderNumber = order.orderNumber.replace('BBB-', '')
+        console.log(`📋 Actual Order Number: ${actualOrderNumber}`)
+
+        // Update order status via Ticimax SOAP (pass both ID and order number)
+        await bolbolbulClient.updateOrderStatus(
+          order.platformOrderId,
+          parseInt(platformStatus),
+          actualOrderNumber
+        )
 
         console.log(`✅ Ticimax durumu başarıyla güncellendi`)
         platformUpdateSuccess = true
