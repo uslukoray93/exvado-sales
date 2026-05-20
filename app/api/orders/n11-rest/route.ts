@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getN11RestClient } from '@/lib/api/n11-rest'
 import { prisma } from '@/lib/prisma'
 import { Platform, OrderStatus } from '@prisma/client'
+import { getProductImagesByStockCodes } from '@/lib/image-fetcher'
 
 /**
  * GET /api/orders/n11-rest
@@ -23,11 +24,12 @@ export async function GET(request: NextRequest) {
     let totalOrders = 0
 
     if (syncAll) {
-      // Fetch last 3 months orders
-      console.log('Starting N11 REST sync for last 3 months...')
+      // Fetch all 2026 orders (from Jan 1, 2026 to now)
+      console.log('Starting N11 REST sync for all 2026 orders...')
 
       const now = Date.now()
-      const threeMonthsAgo = now - (90 * 24 * 60 * 60 * 1000)
+      const startOf2026 = new Date('2026-01-01T00:00:00Z').getTime()
+      const threeMonthsAgo = startOf2026  // Changed to start of 2026
 
       // N11 REST API can handle up to 1 month per request
       // Split into monthly chunks
@@ -113,6 +115,61 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Fetch product images and purchase prices from XML feed
+    console.log('📥 Fetching product images and prices from Ticimax XML...')
+    const allStockCodes: string[] = []
+    for (const order of syncedOrders) {
+      for (const item of order.items || []) {
+        if (item.stockCode) {
+          allStockCodes.push(item.stockCode)
+        }
+      }
+    }
+
+    if (allStockCodes.length > 0) {
+      // Fetch images
+      const imageMap = await getProductImagesByStockCodes(allStockCodes)
+      console.log(`✅ Fetched ${imageMap.size} product images from XML`)
+
+      // Fetch purchase prices
+      const { getBolbolbulXMLClient } = await import('@/lib/api/bolbolbul-xml')
+      const bolbolbulClient = getBolbolbulXMLClient()
+      const priceMap = await bolbolbulClient.getPurchasePrices(allStockCodes)
+      console.log(`💰 Fetched ${priceMap.size} purchase prices from XML`)
+
+      // Update order items with images and prices
+      for (const order of syncedOrders) {
+        for (const item of order.items || []) {
+          if (item.stockCode) {
+            const updateData: any = {}
+
+            // Add image if found
+            const imageUrl = imageMap.get(item.stockCode)
+            if (imageUrl) {
+              updateData.imageUrl = imageUrl
+              item.imageUrl = imageUrl // Update in-memory object too
+            }
+
+            // Add purchase price if found (and current price is 0)
+            const purchasePrice = priceMap.get(item.stockCode)
+            if (purchasePrice && purchasePrice > 0 && (!item.purchasePrice || item.purchasePrice === 0)) {
+              updateData.purchasePrice = purchasePrice
+              item.purchasePrice = purchasePrice // Update in-memory object too
+              console.log(`💰 Added purchase price for ${item.productName}: ${purchasePrice} TL`)
+            }
+
+            // Update if we have data to update
+            if (Object.keys(updateData).length > 0) {
+              await prisma.orderItem.update({
+                where: { id: item.id },
+                data: updateData
+              })
+            }
+          }
+        }
+      }
+    }
+
     return NextResponse.json({
       success: true,
       message: `Successfully synced ${syncedOrders.length} orders from N11 (REST)`,
@@ -144,8 +201,11 @@ async function syncOrder(order: any) {
   // Map N11 REST status to internal status
   const mappedStatus = mapN11RestStatus(order.shipmentPackageStatus)
 
-  // Use package ID as platformOrderId (unique per package)
-  const platformOrderId = String(order.id)
+  // Use package ID as BOTH platformOrderId and for orderNumber
+  // N11 API: order.id = package ID (unique), order.orderNumber = order number (can have multiple packages)
+  // We treat each package as a separate order in our system
+  const packageId = String(order.id)
+  const orderNumberFromN11 = String(order.orderNumber)
 
   // Get cargo company
   const cargoCompany = mapN11CargoCompany(order.cargoProviderName)
@@ -161,71 +221,78 @@ async function syncOrder(order: any) {
     ? `${order.shippingAddress.address || ''}, ${order.shippingAddress.district || ''}, ${order.shippingAddress.city || ''}`.trim()
     : 'Unknown'
 
-  // Check if order exists
-  const existingOrder = await prisma.order.findUnique({
-    where: { platformOrderId },
+  // Check if this package already exists in database
+  // Use platformOrderId (package ID) for uniqueness check
+  const existingOrder = await prisma.order.findFirst({
+    where: {
+      platform: Platform.N11,
+      platformOrderId: packageId  // Search by package ID
+    },
     include: { items: true }
   })
 
-  // If order exists, delete old items before upserting
   if (existingOrder) {
+    // If order exists, delete old items before upserting
     await prisma.orderItem.deleteMany({
       where: { orderId: existingOrder.id }
     })
   }
 
-  const dbOrder = await prisma.order.upsert({
-    where: {
-      platformOrderId: platformOrderId,
-    },
-    update: {
-      status: mappedStatus,
-      customerName: customerName,
-      customerPhone: customerPhone,
-      customerAddress: customerAddress,
-      trackingNumber: order.cargoTrackingNumber || order.cargoSenderNumber || undefined,
-      cargoCompany: cargoCompany,
-      commissionRate: 15, // N11 default commission
-      items: {
-        create: (order.lines || []).map((item: any) => ({
-          productName: item.productName || 'Ürün',
-          stockCode: item.stockCode || null,
-          sku: String(item.productId || item.orderLineId || ''), // Use N11 product ID or line ID
-          quantity: item.quantity || 1,
-          purchasePrice: 0, // Will be updated manually
-          salePrice: item.price || 0,
-        })),
-      },
-    },
-    create: {
-      orderNumber: `N11-${platformOrderId}`, // Use package ID for uniqueness (order can have multiple packages)
-      platform: Platform.N11,
-      platformOrderId: platformOrderId,
-      customerName: customerName,
-      customerPhone: customerPhone,
-      customerAddress: customerAddress,
-      status: mappedStatus,
-      orderDate: orderDate,
-      agreedDeliveryDate: agreedDeliveryDate,
-      trackingNumber: order.cargoTrackingNumber || order.cargoSenderNumber || undefined,
-      cargoCompany: cargoCompany,
-      commissionRate: 15, // N11 default commission
-      shippingCost: 0, // Will be updated later
-      items: {
-        create: (order.lines || []).map((item: any) => ({
-          productName: item.productName || 'Ürün',
-          stockCode: item.stockCode || null,
-          sku: String(item.productId || item.orderLineId || ''),
-          quantity: item.quantity || 1,
-          purchasePrice: 0, // Will be updated manually
-          salePrice: item.price || 0,
-        })),
-      },
-    },
-    include: {
-      items: true,
-    },
-  })
+  // Upsert logic - if order exists, update it, otherwise create it
+  const dbOrder = existingOrder
+    ? await prisma.order.update({
+        where: { id: existingOrder.id },
+        data: {
+          status: mappedStatus,
+          customerName: customerName,
+          customerPhone: customerPhone,
+          customerAddress: customerAddress,
+          trackingNumber: order.cargoTrackingNumber || order.cargoSenderNumber || undefined,
+          cargoCompany: cargoCompany,
+          commissionRate: 15,
+          items: {
+            create: (order.lines || []).map((item: any) => ({
+              productName: item.productName || 'Ürün',
+              stockCode: item.stockCode || null,
+              sku: String(item.productId || item.orderLineId || ''),
+              quantity: item.quantity || 1,
+              purchasePrice: 0,
+              salePrice: item.price || 0,
+            })),
+          },
+        },
+        include: { items: true },
+      })
+    : await prisma.order.create({
+        data: {
+          orderNumber: `N11-${packageId}`, // Use package ID for orderNumber (unique per package)
+          platform: Platform.N11,
+          platformOrderId: packageId, // Use package ID as platformOrderId for uniqueness
+          customerName: customerName,
+          customerPhone: customerPhone,
+          customerAddress: customerAddress,
+          status: mappedStatus,
+          orderDate: orderDate,
+          agreedDeliveryDate: agreedDeliveryDate,
+          trackingNumber: order.cargoTrackingNumber || order.cargoSenderNumber || undefined,
+          cargoCompany: cargoCompany,
+          commissionRate: 15, // N11 default commission
+          shippingCost: 0, // Will be updated later
+          items: {
+            create: (order.lines || []).map((item: any) => ({
+              productName: item.productName || 'Ürün',
+              stockCode: item.stockCode || null,
+              sku: String(item.productId || item.orderLineId || ''),
+              quantity: item.quantity || 1,
+              purchasePrice: 0, // Will be updated manually
+              salePrice: item.price || 0,
+            })),
+          },
+        },
+        include: {
+          items: true,
+        },
+      })
 
   return dbOrder
 }

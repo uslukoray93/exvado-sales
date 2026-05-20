@@ -103,6 +103,8 @@ type Order = {
   customerAddress: string
   items: OrderItem[]
   status: OrderStatus
+  ticimaxStatus?: string | null  // Ticimax orijinal durum adı (Bolbolbul için)
+  orderTotal?: number | null     // Ticimax ToplamTutar: KDV dahil toplam sipariş tutarı (Bolbolbul için)
   commissionRate: number | null  // Komisyon oranı (%)
   shippingCost: number           // Kargo maliyeti
   orderDate: string
@@ -283,33 +285,29 @@ const SAMPLE_ORDERS: Order[] = [
 const getPlatformWorkflow = (platform: Platform) => {
   switch (platform) {
     case "trendyol":
-      // Trendyol: Beklemede -> İşleme Al -> Kargoya Hazır -> Kargoya Verildi -> Teslim Edildi -> Fatura Yükle
+      // Trendyol: Beklemede -> İşleme Al -> Kargoya Hazır -> Kargoya Verildi -> Teslim Edildi (Otomatik Tamamlandı)
       return {
         hasApprovalStep: false,
-        requiresInvoice: true,
-        steps: ["pending", "processing", "ready_to_ship", "shipped", "delivered", "completed"],
+        steps: ["pending", "processing", "ready_to_ship", "shipped", "delivered"],
       }
     case "n11":
-      // N11: Beklemede -> Hazırlanıyor -> Kargoya Verildi -> Teslim Edildi -> Fatura Yükle
+      // N11: Beklemede -> Hazırlanıyor -> Kargoya Verildi -> Teslim Edildi (Otomatik Tamamlandı)
       // N11 REST API only supports Picking status, no separate Approved step
       return {
         hasApprovalStep: false,
-        requiresInvoice: true,
-        steps: ["pending", "processing", "shipped", "delivered", "completed"],
+        steps: ["pending", "processing", "shipped", "delivered"],
       }
     case "hepsiburada":
-      // Hepsiburada: Beklemede -> Onayla -> İşleme Al -> Kargoya Verildi -> Teslim Edildi -> Fatura Yükle
+      // Hepsiburada: Beklemede -> Onayla -> İşleme Al -> Kargoya Verildi -> Teslim Edildi (Otomatik Tamamlandı)
       return {
         hasApprovalStep: true,
-        requiresInvoice: true,
-        steps: ["pending", "approved", "processing", "shipped", "delivered", "completed"],
+        steps: ["pending", "approved", "processing", "shipped", "delivered"],
       }
     case "bolbolbul":
-      // Bolbolbul: Beklemede -> İşlemde -> Kargoya Verildi -> Tamamlandı (Fatura yok)
+      // Bolbolbul: Beklemede -> İşlemde -> Kargoya Verildi -> Teslim Edildi (Otomatik Tamamlandı)
       return {
         hasApprovalStep: false,
-        requiresInvoice: false,
-        steps: ["pending", "processing", "shipped", "completed"],
+        steps: ["pending", "processing", "shipped", "delivered"],
       }
   }
 }
@@ -452,15 +450,19 @@ export default function OrdersPage() {
     return `${day}.${month}.${year} ${hours}:${minutes}`
   }
 
-  // Calculate remaining time (24 hours from order date)
-  const getRemainingTime = (orderDate: string, agreedDeliveryDate?: string) => {
+  // Calculate remaining time
+  // - Bolbolbul: 3 days (72 hours)
+  // - Other platforms: 24 hours or agreedDeliveryDate
+  const getRemainingTime = (orderDate: string, agreedDeliveryDate?: string, platform?: string) => {
     const orderTime = new Date(orderDate)
 
     // If agreedDeliveryDate is provided, use it as deadline
-    // Otherwise, use orderDate + 24 hours as default
+    // Otherwise, use platform-specific defaults
     const deadlineTime = agreedDeliveryDate
       ? new Date(agreedDeliveryDate)
-      : new Date(orderTime.getTime() + 24 * 60 * 60 * 1000) // 24 hours
+      : platform?.toUpperCase() === 'BOLBOLBUL'
+        ? new Date(orderTime.getTime() + 3 * 24 * 60 * 60 * 1000) // 3 days for Bolbolbul
+        : new Date(orderTime.getTime() + 24 * 60 * 60 * 1000) // 24 hours for others
 
     const remaining = deadlineTime.getTime() - currentTime.getTime()
 
@@ -498,7 +500,11 @@ export default function OrdersPage() {
     const rate = commissionRate !== undefined ? commissionRate : order.commissionRate
 
     // Total sale amount
-    const totalSale = order.items.reduce((sum, item) => sum + (item.salePrice * item.quantity), 0)
+    // Bolbolbul için orderTotal varsa onu kullan (KDV dahil toplam tutar)
+    // Diğer platformlar için items'dan hesapla
+    const totalSale = (order.platform === 'bolbolbul' && order.orderTotal)
+      ? order.orderTotal
+      : order.items.reduce((sum, item) => sum + (item.salePrice * item.quantity), 0)
 
     // Total purchase cost
     const totalPurchase = order.items.reduce((sum, item) => sum + (item.purchasePrice * item.quantity), 0)
@@ -902,10 +908,8 @@ export default function OrdersPage() {
         return orders.filter(o => o.status === "processing" || o.status === "ready_to_ship")
       case "shipped":
         return orders.filter(o => o.status === "shipped")
-      case "awaiting-invoice":
-        return orders.filter(o => o.status === "delivered" && !o.invoiceUploaded)
-      case "completed":
-        return orders.filter(o => o.status === "completed" || (o.status === "delivered" && o.invoiceUploaded))
+      case "delivered":
+        return orders.filter(o => o.status === "delivered" || o.status === "completed")
       case "cancelled":
         return orders.filter(o => o.status === "cancelled")
       default:
@@ -951,8 +955,7 @@ export default function OrdersPage() {
       approved: orders.filter(o => o.status === "approved").length,
       processing: orders.filter(o => o.status === "processing" || o.status === "ready_to_ship").length,
       shipped: orders.filter(o => o.status === "shipped").length,
-      awaitingInvoice: orders.filter(o => o.status === "delivered" && !o.invoiceUploaded).length,
-      completed: orders.filter(o => o.status === "completed" || (o.status === "delivered" && o.invoiceUploaded)).length,
+      delivered: orders.filter(o => o.status === "delivered" || o.status === "completed").length,
       cancelled: orders.filter(o => o.status === "cancelled").length,
     }
   })()
@@ -1053,7 +1056,7 @@ export default function OrdersPage() {
         </div>
 
         {/* Statistics */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Toplam Sipariş</p>
             <p className="text-lg font-bold text-gray-900 dark:text-white">{stats.all}</p>
@@ -1074,14 +1077,9 @@ export default function OrdersPage() {
             <p className="text-lg font-bold text-purple-600 dark:text-purple-500">{stats.shipped}</p>
           </div>
 
-          <div className="bg-amber-50 dark:bg-amber-950/20 rounded-xl p-4 border border-amber-100 dark:border-amber-900/30">
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Fatura Bekliyor</p>
-            <p className="text-lg font-bold text-amber-600 dark:text-amber-500">{stats.awaitingInvoice}</p>
-          </div>
-
           <div className="bg-green-50 dark:bg-green-950/20 rounded-xl p-4 border border-green-100 dark:border-green-900/30">
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Tamamlandı</p>
-            <p className="text-lg font-bold text-green-600 dark:text-green-500">{stats.completed}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Teslim Edildi</p>
+            <p className="text-lg font-bold text-green-600 dark:text-green-500">{stats.delivered}</p>
           </div>
 
           <div className="bg-red-50 dark:bg-red-950/20 rounded-xl p-4 border border-red-100 dark:border-red-900/30">
@@ -1092,7 +1090,7 @@ export default function OrdersPage() {
 
         {/* Tabs */}
         <Tabs defaultValue="pending" value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-8 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+          <TabsList className="grid w-full grid-cols-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
             <TabsTrigger value="all" className="text-xs">
               Tümü ({stats.all})
             </TabsTrigger>
@@ -1105,11 +1103,8 @@ export default function OrdersPage() {
             <TabsTrigger value="shipped" className="text-xs">
               Kargoda ({stats.shipped})
             </TabsTrigger>
-            <TabsTrigger value="awaiting-invoice" className="text-xs">
-              Fatura ({stats.awaitingInvoice})
-            </TabsTrigger>
-            <TabsTrigger value="completed" className="text-xs">
-              Tamamlandı ({stats.completed})
+            <TabsTrigger value="delivered" className="text-xs">
+              Teslim Edildi ({stats.delivered})
             </TabsTrigger>
             <TabsTrigger value="cancelled" className="text-xs">
               İptal ({stats.cancelled})
@@ -1338,7 +1333,7 @@ export default function OrdersPage() {
                                   )
                                 }
 
-                                const timeLeft = getRemainingTime(order.orderDate, order.agreedDeliveryDate)
+                                const timeLeft = getRemainingTime(order.orderDate, order.agreedDeliveryDate, order.platform)
 
                                 // Gecikme durumu
                                 if (timeLeft.isDelayed) {
@@ -1383,7 +1378,14 @@ export default function OrdersPage() {
                               })()}
                             </TableCell>
                             <TableCell className="py-2 h-12 text-center">
-                              {getStatusBadge(order.status)}
+                              {/* Bolbolbul için Ticimax orijinal status adını göster */}
+                              {order.platform.toLowerCase() === 'bolbolbul' && order.ticimaxStatus ? (
+                                <Badge variant="outline" className="text-[10px] px-2 py-0.5 h-5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-300 dark:border-blue-700">
+                                  {order.ticimaxStatus}
+                                </Badge>
+                              ) : (
+                                getStatusBadge(order.status)
+                              )}
                             </TableCell>
                             <TableCell className="text-xs text-right font-semibold text-gray-900 dark:text-gray-100 py-2 h-12 w-[100px] whitespace-nowrap">
                               {financials.totalSale.toFixed(2)} ₺

@@ -163,6 +163,55 @@ async function fetchProductImages(order: any, trendyolClient?: any) {
 }
 
 /**
+ * Fetch purchase prices from Bolbolbul XML feed using stock codes
+ */
+async function fetchPurchasePrices(order: any) {
+  const prices: Record<string, number> = {}
+
+  try {
+    // Import Bolbolbul XML client
+    const { getBolbolbulXMLClient } = await import('@/lib/api/bolbolbul-xml')
+    const bolbolbulClient = getBolbolbulXMLClient()
+
+    // Collect all stock codes from order lines
+    const stockCodes: string[] = []
+    for (const line of order.lines || []) {
+      if (line.merchantSku || line.stockCode) {
+        stockCodes.push(line.merchantSku || line.stockCode)
+      }
+    }
+
+    if (stockCodes.length === 0) {
+      return prices
+    }
+
+    console.log(`💰 Fetching purchase prices for ${stockCodes.length} products from Bolbolbul XML...`)
+
+    // Fetch purchase prices from XML
+    const priceMap = await bolbolbulClient.getPurchasePrices(stockCodes)
+
+    // Map prices to barcodes
+    for (const line of order.lines || []) {
+      const stockCode = line.merchantSku || line.stockCode
+      if (stockCode) {
+        const purchasePrice = priceMap.get(stockCode)
+        if (purchasePrice) {
+          prices[line.barcode] = purchasePrice
+          console.log(`✅ Found purchase price for ${line.productName} (${stockCode}): ${purchasePrice} TL`)
+        } else {
+          console.log(`⚠️  No purchase price found for ${line.productName} (${stockCode})`)
+        }
+      }
+    }
+
+  } catch (error: any) {
+    console.error('❌ Failed to fetch purchase prices from Bolbolbul XML:', error.message)
+  }
+
+  return prices
+}
+
+/**
  * Sync a single order to database
  */
 async function syncOrder(order: any, trendyolClient?: any) {
@@ -192,13 +241,28 @@ async function syncOrder(order: any, trendyolClient?: any) {
   // Fetch product images if trendyolClient is provided
   const productImages = trendyolClient ? await fetchProductImages(order, trendyolClient) : {}
 
-  // Check if invoice is uploaded (invoice link exists in API response)
-  const hasInvoice = order.invoice !== null && order.invoice !== undefined
-  const invoiceLink = order.invoiceLink || null
-  const isInvoiced = hasInvoice || invoiceLink !== null
+  // Fetch purchase prices from Bolbolbul XML (for ALL orders - new and existing)
+  let purchasePrices: Record<string, number> = {}
+  console.log(`💰 Fetching purchase prices from Bolbolbul XML for order ${order.orderNumber}...`)
+  try {
+    purchasePrices = await fetchPurchasePrices(order)
+    console.log(`💰 Found purchase prices for ${Object.keys(purchasePrices).length} products`)
+  } catch (error: any) {
+    console.error(`❌ Failed to fetch purchase prices for order ${order.orderNumber}:`, error.message)
+    // Continue without prices - can be manually entered later
+  }
 
-  // If invoice is uploaded, mark order as completed
-  const finalStatus = isInvoiced ? OrderStatus.COMPLETED : mappedStatus
+  // AUTO-COMPLETE: 7+ günlük DELIVERED siparişleri otomatik COMPLETED yap
+  let finalStatus = mappedStatus
+  if (mappedStatus === OrderStatus.DELIVERED) {
+    const orderDate = new Date(order.orderDate)
+    const daysSinceOrder = Math.floor((Date.now() - orderDate.getTime()) / (1000 * 60 * 60 * 24))
+
+    if (daysSinceOrder >= 7) {
+      console.log(`📦 Sipariş ${daysSinceOrder} gün önce teslim edildi, otomatik COMPLETED yapılıyor`)
+      finalStatus = OrderStatus.COMPLETED
+    }
+  }
 
   const dbOrder = await prisma.order.upsert({
     where: {
@@ -213,7 +277,6 @@ async function syncOrder(order: any, trendyolClient?: any) {
       cargoCompany: cargoCompany,
       agreedDeliveryDate: order.agreedDeliveryDate ? new Date(order.agreedDeliveryDate) : undefined,
       commissionRate: 17, // Trendyol default commission
-      invoiceUploaded: isInvoiced,
     },
     create: {
       orderNumber: `TY-${order.orderNumber}`,
@@ -229,17 +292,19 @@ async function syncOrder(order: any, trendyolClient?: any) {
       cargoCompany: cargoCompany,
       commissionRate: 17, // Trendyol default commission
       shippingCost: 0, // Will be updated later
-      invoiceUploaded: isInvoiced,
       items: {
-        create: order.lines.map((line: any) => ({
-          productName: line.productName,
-          stockCode: line.merchantSku || null,
-          sku: line.barcode,
-          quantity: line.quantity,
-          purchasePrice: 0, // Will be updated manually
-          salePrice: line.price,
-          imageUrl: productImages[line.barcode] || null,
-        })),
+        create: order.lines.map((line: any) => {
+          const purchasePrice = purchasePrices[line.barcode]
+          return {
+            productName: line.productName,
+            stockCode: line.merchantSku || null,
+            sku: line.barcode,
+            quantity: line.quantity,
+            purchasePrice: purchasePrice || 0, // Use Bolbolbul price if found, else 0
+            salePrice: line.price,
+            imageUrl: productImages[line.barcode] || null,
+          }
+        }),
       },
     },
     include: {
@@ -247,14 +312,36 @@ async function syncOrder(order: any, trendyolClient?: any) {
     },
   })
 
-  // Update existing items with image URLs if this is an update
-  if (existingOrder && Object.keys(productImages).length > 0) {
+  // Update existing items with image URLs and purchase prices if this is an update
+  if (existingOrder) {
     for (const item of dbOrder.items) {
+      const updateData: any = {}
+
+      // Görsel kontrolü - Eğer yoksa ekle
       const imageUrl = productImages[item.sku]
       if (imageUrl && !item.imageUrl) {
+        updateData.imageUrl = imageUrl
+        console.log(`✅ GÖRSEL EKLENDİ: ${item.productName} - ${imageUrl}`)
+      }
+
+      // Alış fiyatı kontrolü - Eğer 0 ise veya yoksa, Bolbolbul'dan al
+      if (!item.purchasePrice || item.purchasePrice === 0) {
+        const purchasePrice = purchasePrices[item.sku]
+        if (purchasePrice && purchasePrice > 0) {
+          updateData.purchasePrice = purchasePrice
+          console.log(`💰 FİYAT EKLENDİ: ${item.productName} - ${purchasePrice} TL`)
+        } else {
+          console.log(`⚠️  FİYAT EKSİK: ${item.productName} (${item.stockCode}) - Bolbolbul XML'de bulunamadı`)
+        }
+      } else {
+        console.log(`✅ FİYAT KORUNDU: ${item.productName} - ${item.purchasePrice} TL`)
+      }
+
+      // Eğer güncelleme gerekiyorsa, update yap
+      if (Object.keys(updateData).length > 0) {
         await prisma.orderItem.update({
           where: { id: item.id },
-          data: { imageUrl },
+          data: updateData,
         })
       }
     }

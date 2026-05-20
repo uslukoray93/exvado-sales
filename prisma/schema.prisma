@@ -16,6 +16,7 @@ model Order {
   customerPhone      String
   customerAddress    String
   status             OrderStatus @default(PENDING)
+  ticimaxStatus      String?     // Ticimax orijinal durum adı (örn: "Sipariş Alındı", "Kargoya verildi")
   commissionRate     Float?
   shippingCost       Float       @default(0)
   orderDate          DateTime
@@ -29,11 +30,15 @@ model Order {
   invoiceDate        DateTime?
   invoiceNumber      String?
   invoiceUploaded    Boolean     @default(false)
+  paymentType        Int?        // Ticimax OdemeTipi: 0=Kredi Kartı, 1=Havale, etc.
+  paymentMethod      String?     // Ödeme yöntemi adı
+  orderTotal         Float?      // Ticimax ToplamTutar: KDV dahil toplam sipariş tutarı
   items              OrderItem[]
 
   @@index([orderDate])
   @@index([platform])
   @@index([status])
+  @@index([paymentType])
 }
 
 model OrderItem {

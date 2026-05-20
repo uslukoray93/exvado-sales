@@ -203,7 +203,8 @@ export class N11SoapClient {
           const orderData = result.orderDetail || result
           console.log(`🔍 N11 SOAP OrderDetail Response - ID: ${orderData.id}, orderNumber: ${orderData.orderNumber || 'MISSING'}`)
 
-          resolve(result)
+          // FIX: Return orderData (with orderNumber) instead of result
+          resolve(orderData)
         })
       })
     })

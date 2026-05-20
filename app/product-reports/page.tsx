@@ -1,16 +1,9 @@
 "use client"
 
-import React, { useState, useMemo } from "react"
+import React, { useState, useEffect } from "react"
 import { MainLayout } from "@/components/layout/main-layout"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import {
   Table,
   TableBody,
@@ -27,1069 +20,449 @@ import {
 } from "@/components/ui/tabs"
 import {
   TrendingUp,
-  TrendingDown,
+  Search,
   Package,
-  AlertTriangle,
-  Trophy,
-  Star,
-  XCircle,
-  BarChart3,
-  Download,
-  RefreshCw,
-  ShoppingCart,
-  DollarSign,
-  Percent,
-  Tags,
-  Building2,
-  ArrowUp,
-  ArrowDown,
-  Minus,
   AlertCircle,
-  CheckCircle,
-  Clock,
+  DollarSign,
+  RefreshCw,
 } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
 import Image from "next/image"
+import { toast } from "sonner"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
-// Platform type
-type Platform = "trendyol" | "n11" | "hepsiburada" | "bolbolbul"
-
-// Product performance data
-interface ProductPerformance {
-  id: string
-  sku: string
-  name: string
-  category: string
-  brand: string
-  image: string
-  totalSales: number
-  totalOrders: number
+// Product stats type
+interface ProductStats {
+  stockCode: string
+  productName: string
+  imageUrl: string | null
+  totalSold: number
+  totalReturned: number
+  lastSalePrice: number
+  lastPurchasePrice: number
   totalRevenue: number
-  totalCost: number
-  profit: number
+  totalProfit: number
   profitMargin: number
-  avgPrice: number
-  currentStock: number
-  stockStatus: "critical" | "low" | "good" | "excellent"
-  returnRate: number
-  platforms: {
-    platform: Platform
-    sales: number
-    orders: number
-  }[]
-  trend: "up" | "down" | "stable"
-  trendPercentage: number
-}
-
-// Time period type
-type TimePeriod = "week" | "month" | "3months" | "6months" | "year"
-
-const periodLabels: Record<TimePeriod, string> = {
-  week: "Son 7 Gün",
-  month: "Son 30 Gün",
-  "3months": "Son 3 Ay",
-  "6months": "Son 6 Ay",
-  year: "Son 1 Yıl",
-}
-
-const platformLogos: Record<Platform, string> = {
-  trendyol: "/platforms/trendyol.png",
-  n11: "/platforms/n11.png",
-  hepsiburada: "/platforms/hepsiburada.png",
-  bolbolbul: "/platforms/bolbolbul.png",
 }
 
 export default function ProductReportsPage() {
-  const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>("month")
+  const [activeTab, setActiveTab] = useState<"best-sellers" | "returns" | "most-profitable">("best-sellers")
+  const [searchQuery, setSearchQuery] = useState("")
+  const [bestSellers, setBestSellers] = useState<ProductStats[]>([])
+  const [returns, setReturns] = useState<ProductStats[]>([])
+  const [mostProfitable, setMostProfitable] = useState<ProductStats[]>([])
+  const [loading, setLoading] = useState(false)
 
-  // Sample product performance data
-  const productsData: ProductPerformance[] = [
-    {
-      id: "1",
-      sku: "PRD-001",
-      name: "Premium Kablosuz Kulaklık",
-      category: "Elektronik > Ses Sistemleri",
-      brand: "TechPro",
-      image: "/products/product1.jpg",
-      totalSales: 450,
-      totalOrders: 450,
-      totalRevenue: 337500,
-      totalCost: 202500,
-      profit: 135000,
-      profitMargin: 40,
-      avgPrice: 750,
-      currentStock: 85,
-      stockStatus: "good",
-      returnRate: 2.5,
-      platforms: [
-        { platform: "trendyol", sales: 200, orders: 200 },
-        { platform: "n11", sales: 150, orders: 150 },
-        { platform: "hepsiburada", sales: 100, orders: 100 },
-      ],
-      trend: "up",
-      trendPercentage: 15,
-    },
-    {
-      id: "2",
-      sku: "PRD-002",
-      name: "Akıllı Saat Pro",
-      category: "Elektronik > Giyilebilir Teknoloji",
-      brand: "SmartTech",
-      image: "/products/product2.jpg",
-      totalSales: 380,
-      totalOrders: 380,
-      totalRevenue: 570000,
-      totalCost: 380000,
-      profit: 190000,
-      profitMargin: 33.3,
-      avgPrice: 1500,
-      currentStock: 45,
-      stockStatus: "low",
-      returnRate: 3.2,
-      platforms: [
-        { platform: "trendyol", sales: 180, orders: 180 },
-        { platform: "hepsiburada", sales: 120, orders: 120 },
-        { platform: "n11", sales: 80, orders: 80 },
-      ],
-      trend: "up",
-      trendPercentage: 22,
-    },
-    {
-      id: "3",
-      sku: "PRD-003",
-      name: "Mekanik Klavye RGB",
-      category: "Bilgisayar > Çevre Birimleri",
-      brand: "GameMaster",
-      image: "/products/product3.jpg",
-      totalSales: 320,
-      totalOrders: 320,
-      totalRevenue: 192000,
-      totalCost: 128000,
-      profit: 64000,
-      profitMargin: 33.3,
-      avgPrice: 600,
-      currentStock: 120,
-      stockStatus: "excellent",
-      returnRate: 1.8,
-      platforms: [
-        { platform: "trendyol", sales: 140, orders: 140 },
-        { platform: "n11", sales: 100, orders: 100 },
-        { platform: "hepsiburada", sales: 80, orders: 80 },
-      ],
-      trend: "stable",
-      trendPercentage: 0,
-    },
-    {
-      id: "4",
-      sku: "PRD-004",
-      name: "4K Webcam Ultra HD",
-      category: "Bilgisayar > Çevre Birimleri",
-      brand: "VisionPro",
-      image: "/products/product4.jpg",
-      totalSales: 280,
-      totalOrders: 280,
-      totalRevenue: 252000,
-      totalCost: 168000,
-      profit: 84000,
-      profitMargin: 33.3,
-      avgPrice: 900,
-      currentStock: 95,
-      stockStatus: "good",
-      returnRate: 2.1,
-      platforms: [
-        { platform: "hepsiburada", sales: 120, orders: 120 },
-        { platform: "trendyol", sales: 100, orders: 100 },
-        { platform: "n11", sales: 60, orders: 60 },
-      ],
-      trend: "up",
-      trendPercentage: 18,
-    },
-    {
-      id: "5",
-      sku: "PRD-005",
-      name: "Gaming Mouse Wireless",
-      category: "Bilgisayar > Çevre Birimleri",
-      brand: "GameMaster",
-      image: "/products/product5.jpg",
-      totalSales: 250,
-      totalOrders: 250,
-      totalRevenue: 112500,
-      totalCost: 75000,
-      profit: 37500,
-      profitMargin: 33.3,
-      avgPrice: 450,
-      currentStock: 150,
-      stockStatus: "excellent",
-      returnRate: 1.5,
-      platforms: [
-        { platform: "trendyol", sales: 110, orders: 110 },
-        { platform: "n11", sales: 80, orders: 80 },
-        { platform: "hepsiburada", sales: 60, orders: 60 },
-      ],
-      trend: "up",
-      trendPercentage: 12,
-    },
-    {
-      id: "6",
-      sku: "PRD-006",
-      name: "USB-C Hub 7-in-1",
-      category: "Bilgisayar > Çevre Birimleri",
-      brand: "TechPro",
-      image: "/products/product6.jpg",
-      totalSales: 220,
-      totalOrders: 220,
-      totalRevenue: 88000,
-      totalCost: 55000,
-      profit: 33000,
-      profitMargin: 37.5,
-      avgPrice: 400,
-      currentStock: 180,
-      stockStatus: "excellent",
-      returnRate: 1.2,
-      platforms: [
-        { platform: "n11", sales: 90, orders: 90 },
-        { platform: "trendyol", sales: 80, orders: 80 },
-        { platform: "hepsiburada", sales: 50, orders: 50 },
-      ],
-      trend: "stable",
-      trendPercentage: 0,
-    },
-    {
-      id: "7",
-      sku: "PRD-007",
-      name: "Bluetooth Speaker Mini",
-      category: "Elektronik > Ses Sistemleri",
-      brand: "SoundMax",
-      image: "/products/product7.jpg",
-      totalSales: 180,
-      totalOrders: 180,
-      totalRevenue: 90000,
-      totalCost: 54000,
-      profit: 36000,
-      profitMargin: 40,
-      avgPrice: 500,
-      currentStock: 25,
-      stockStatus: "critical",
-      returnRate: 4.5,
-      platforms: [
-        { platform: "trendyol", sales: 80, orders: 80 },
-        { platform: "hepsiburada", sales: 60, orders: 60 },
-        { platform: "n11", sales: 40, orders: 40 },
-      ],
-      trend: "down",
-      trendPercentage: -8,
-    },
-    {
-      id: "8",
-      sku: "PRD-008",
-      name: "LED Monitör 27 inch",
-      category: "Bilgisayar > Monitörler",
-      brand: "ViewPro",
-      image: "/products/product8.jpg",
-      totalSales: 150,
-      totalOrders: 150,
-      totalRevenue: 375000,
-      totalCost: 262500,
-      profit: 112500,
-      profitMargin: 30,
-      avgPrice: 2500,
-      currentStock: 35,
-      stockStatus: "low",
-      returnRate: 2.8,
-      platforms: [
-        { platform: "trendyol", sales: 70, orders: 70 },
-        { platform: "hepsiburada", sales: 50, orders: 50 },
-        { platform: "n11", sales: 30, orders: 30 },
-      ],
-      trend: "up",
-      trendPercentage: 10,
-    },
-    {
-      id: "9",
-      sku: "PRD-009",
-      name: "Laptop Stand Alüminyum",
-      category: "Bilgisayar > Aksesuarlar",
-      brand: "ErgoTech",
-      image: "/products/product9.jpg",
-      totalSales: 120,
-      totalOrders: 120,
-      totalRevenue: 36000,
-      totalCost: 21600,
-      profit: 14400,
-      profitMargin: 40,
-      avgPrice: 300,
-      currentStock: 200,
-      stockStatus: "excellent",
-      returnRate: 0.8,
-      platforms: [
-        { platform: "n11", sales: 50, orders: 50 },
-        { platform: "trendyol", sales: 40, orders: 40 },
-        { platform: "hepsiburada", sales: 30, orders: 30 },
-      ],
-      trend: "stable",
-      trendPercentage: 0,
-    },
-    {
-      id: "10",
-      sku: "PRD-010",
-      name: "Wireless Charging Pad",
-      category: "Elektronik > Şarj Cihazları",
-      brand: "ChargePro",
-      image: "/products/product10.jpg",
-      totalSales: 100,
-      totalOrders: 100,
-      totalRevenue: 35000,
-      totalCost: 20000,
-      profit: 15000,
-      profitMargin: 42.8,
-      avgPrice: 350,
-      currentStock: 90,
-      stockStatus: "good",
-      returnRate: 1.5,
-      platforms: [
-        { platform: "trendyol", sales: 45, orders: 45 },
-        { platform: "hepsiburada", sales: 30, orders: 30 },
-        { platform: "n11", sales: 25, orders: 25 },
-      ],
-      trend: "down",
-      trendPercentage: -5,
-    },
-    // Low performers
-    {
-      id: "11",
-      sku: "PRD-011",
-      name: "HDMI Kablo 2m",
-      category: "Bilgisayar > Kablolar",
-      brand: "CableTech",
-      image: "/products/product11.jpg",
-      totalSales: 45,
-      totalOrders: 45,
-      totalRevenue: 4500,
-      totalCost: 2700,
-      profit: 1800,
-      profitMargin: 40,
-      avgPrice: 100,
-      currentStock: 300,
-      stockStatus: "excellent",
-      returnRate: 0.5,
-      platforms: [
-        { platform: "n11", sales: 20, orders: 20 },
-        { platform: "trendyol", sales: 15, orders: 15 },
-        { platform: "hepsiburada", sales: 10, orders: 10 },
-      ],
-      trend: "down",
-      trendPercentage: -15,
-    },
-    {
-      id: "12",
-      sku: "PRD-012",
-      name: "Phone Case Premium",
-      category: "Telefon > Aksesuarlar",
-      brand: "ProtectPlus",
-      image: "/products/product12.jpg",
-      totalSales: 30,
-      totalOrders: 30,
-      totalRevenue: 3000,
-      totalCost: 1800,
-      profit: 1200,
-      profitMargin: 40,
-      avgPrice: 100,
-      currentStock: 8,
-      stockStatus: "critical",
-      returnRate: 8.5,
-      platforms: [
-        { platform: "trendyol", sales: 15, orders: 15 },
-        { platform: "n11", sales: 10, orders: 10 },
-        { platform: "hepsiburada", sales: 5, orders: 5 },
-      ],
-      trend: "down",
-      trendPercentage: -25,
-    },
-  ]
+  // Fetch product reports
+  useEffect(() => {
+    fetchProductReports()
+  }, [])
 
-  // Category aggregation
-  const categoryData = useMemo(() => {
-    const categories: { [key: string]: { sales: number; revenue: number; orders: number } } = {}
+  const fetchProductReports = async () => {
+    try {
+      setLoading(true)
+      const response = await fetch("/api/reports/products")
+      const result = await response.json()
 
-    productsData.forEach(product => {
-      const mainCategory = product.category.split(">")[0].trim()
-      if (!categories[mainCategory]) {
-        categories[mainCategory] = { sales: 0, revenue: 0, orders: 0 }
+      if (!result.success) {
+        toast.error("Ürün raporları yüklenirken hata oluştu")
+        return
       }
-      categories[mainCategory].sales += product.totalSales
-      categories[mainCategory].revenue += product.totalRevenue
-      categories[mainCategory].orders += product.totalOrders
-    })
 
-    return Object.entries(categories)
-      .map(([name, data]) => ({ name, ...data }))
-      .sort((a, b) => b.revenue - a.revenue)
-  }, [])
+      setBestSellers(result.data.bestSellers || [])
+      setReturns(result.data.returns || [])
+      setMostProfitable(result.data.mostProfitable || [])
+      toast.success(`${result.data.bestSellers.length} ürün yüklendi`)
+    } catch (error) {
+      console.error("Fetch error:", error)
+      toast.error("Ürün raporları yüklenirken hata oluştu")
+    } finally {
+      setLoading(false)
+    }
+  }
 
-  // Brand aggregation
-  const brandData = useMemo(() => {
-    const brands: { [key: string]: { sales: number; revenue: number; orders: number; products: number } } = {}
+  // Filter products based on search
+  const filterProducts = (products: ProductStats[]) => {
+    if (!searchQuery) return products
+    const query = searchQuery.toLowerCase()
+    return products.filter(
+      (p) =>
+        p.productName.toLowerCase().includes(query) ||
+        p.stockCode?.toLowerCase().includes(query)
+    )
+  }
 
-    productsData.forEach(product => {
-      if (!brands[product.brand]) {
-        brands[product.brand] = { sales: 0, revenue: 0, orders: 0, products: 0 }
-      }
-      brands[product.brand].sales += product.totalSales
-      brands[product.brand].revenue += product.totalRevenue
-      brands[product.brand].orders += product.totalOrders
-      brands[product.brand].products += 1
-    })
-
-    return Object.entries(brands)
-      .map(([name, data]) => ({ name, ...data }))
-      .sort((a, b) => b.revenue - a.revenue)
-  }, [])
-
-  // Top performers
-  const topSellingProducts = useMemo(() => {
-    return [...productsData].sort((a, b) => b.totalSales - a.totalSales).slice(0, 50)
-  }, [])
-
-  // Low performers
-  const lowSellingProducts = useMemo(() => {
-    return [...productsData].sort((a, b) => a.totalSales - b.totalSales).slice(0, 50)
-  }, [])
-
-  // Most profitable (by profit margin)
-  const mostProfitableProducts = useMemo(() => {
-    return [...productsData].sort((a, b) => b.profitMargin - a.profitMargin).slice(0, 50)
-  }, [])
-
-  // Critical stock
-  const criticalStockProducts = useMemo(() => {
-    return productsData.filter(p => p.stockStatus === "critical" || p.stockStatus === "low")
-  }, [])
-
-  // High return rate
-  const highReturnProducts = useMemo(() => {
-    return [...productsData].filter(p => p.returnRate > 3).sort((a, b) => b.returnRate - a.returnRate)
-  }, [])
-
+  // Format currency
   const formatCurrency = (amount: number) => {
     return `${amount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")} ₺`
   }
 
-  const getStockStatusBadge = (status: string) => {
-    switch (status) {
-      case "critical":
-        return <Badge variant="destructive" className="text-xs">Kritik</Badge>
-      case "low":
-        return <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-700">Düşük</Badge>
-      case "good":
-        return <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-700">İyi</Badge>
-      case "excellent":
-        return <Badge variant="secondary" className="text-xs bg-green-100 text-green-700">Mükemmel</Badge>
-      default:
-        return null
-    }
-  }
-
-  const getTrendIcon = (trend: string, percentage: number) => {
-    if (trend === "up") {
-      return <ArrowUp className="h-3 w-3 text-green-600" />
-    } else if (trend === "down") {
-      return <ArrowDown className="h-3 w-3 text-red-600" />
-    } else {
-      return <Minus className="h-3 w-3 text-gray-600" />
-    }
-  }
-
   return (
     <MainLayout>
-      <div className="p-6 space-y-6">
+      <div className="p-8 space-y-6 bg-gray-50/50 dark:bg-gray-900">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
-              <BarChart3 className="h-5 w-5 text-blue-600" />
-              Ürün Raporları
-            </h1>
-            <p className="text-xs text-muted-foreground mt-1">
-              Ürün performansı, satış trendleri ve stok durumu analizi
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Ürün Raporları</h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              En çok satan, iade edilen ve kârlı ürünler (Minimum 2 satış)
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Select value={selectedPeriod} onValueChange={(value) => setSelectedPeriod(value as TimePeriod)}>
-              <SelectTrigger className="w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(periodLabels).map(([value, label]) => (
-                  <SelectItem key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button variant="outline" size="sm">
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Yenile
-            </Button>
-            <Button variant="outline" size="sm">
-              <Download className="h-4 w-4 mr-2" />
-              Dışa Aktar
-            </Button>
+            <div className="relative w-64">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Ürün veya stok kodu ara..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 text-xs"
+              />
+            </div>
+            <button
+              onClick={fetchProductReports}
+              disabled={loading}
+              className="px-3 py-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            </button>
           </div>
         </div>
 
-        {/* Overview Cards */}
-        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-          <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white border-0">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-xs font-medium opacity-90 flex items-center gap-2">
-                <Trophy className="h-3.5 w-3.5" />
-                En Çok Satan
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-base font-bold">{topSellingProducts[0]?.name.substring(0, 20)}...</div>
-              <p className="text-xs opacity-75 mt-1">{topSellingProducts[0]?.totalSales} adet satıldı</p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white border-0">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-xs font-medium opacity-90 flex items-center gap-2">
-                <DollarSign className="h-3.5 w-3.5" />
-                En Karlı Ürün
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-base font-bold">{mostProfitableProducts[0]?.name.substring(0, 20)}...</div>
-              <p className="text-xs opacity-75 mt-1">{formatCurrency(mostProfitableProducts[0]?.profit || 0)} kar</p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white border-0">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-xs font-medium opacity-90 flex items-center gap-2">
-                <AlertTriangle className="h-3.5 w-3.5" />
-                Kritik Stok
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold">{criticalStockProducts.length}</div>
-              <p className="text-xs opacity-75 mt-1">Ürün stok azlığında</p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white border-0">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-xs font-medium opacity-90 flex items-center gap-2">
-                <XCircle className="h-3.5 w-3.5" />
-                Yüksek İade Oranı
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold">{highReturnProducts.length}</div>
-              <p className="text-xs opacity-75 mt-1">Ürün %3 üzeri iade oranında</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Main Content Tabs */}
-        <Tabs defaultValue="top-selling" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-6">
-            <TabsTrigger value="top-selling">En Çok Satanlar</TabsTrigger>
-            <TabsTrigger value="high-returns">Yüksek İade</TabsTrigger>
-            <TabsTrigger value="most-profitable">En Karlılar</TabsTrigger>
-            <TabsTrigger value="low-selling">Az Satanlar</TabsTrigger>
-            <TabsTrigger value="critical-stock">Kritik Stok</TabsTrigger>
-            <TabsTrigger value="analytics">Analitik</TabsTrigger>
+        {/* Tabs */}
+        <Tabs value={activeTab} onValueChange={(value: any) => setActiveTab(value)}>
+          <TabsList className="grid w-full grid-cols-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+            <TabsTrigger value="best-sellers" className="text-xs">
+              <TrendingUp className="h-4 w-4 mr-2" />
+              En Çok Satanlar ({bestSellers.length})
+            </TabsTrigger>
+            <TabsTrigger value="returns" className="text-xs">
+              <AlertCircle className="h-4 w-4 mr-2" />
+              Yüksek İade ({returns.length})
+            </TabsTrigger>
+            <TabsTrigger value="most-profitable" className="text-xs">
+              <DollarSign className="h-4 w-4 mr-2" />
+              En Kârlılar ({mostProfitable.length})
+            </TabsTrigger>
           </TabsList>
 
-          {/* Top Selling Products */}
-          <TabsContent value="top-selling" className="space-y-4">
+          {/* Best Sellers Tab */}
+          <TabsContent value="best-sellers" className="mt-6">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Trophy className="h-4 w-4 text-yellow-600" />
-                  En Çok Satan 50 Ürün
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Package className="h-5 w-5" />
+                  En Çok Satan Ürünler
                 </CardTitle>
-                <CardDescription className="text-xs">
-                  {periodLabels[selectedPeriod]} döneminde en yüksek satış hacmine sahip ürünler
-                </CardDescription>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-12">#</TableHead>
-                      <TableHead>Ürün</TableHead>
-                      <TableHead>Kategori</TableHead>
-                      <TableHead>Marka</TableHead>
-                      <TableHead className="text-right">Satış Adedi</TableHead>
-                      <TableHead className="text-right">Alış Fiyatı</TableHead>
-                      <TableHead className="text-right">Satış Fiyatı</TableHead>
-                      <TableHead className="text-right">Kar</TableHead>
-                      <TableHead className="text-right">Kar Marjı</TableHead>
-                      <TableHead>Stok</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {topSellingProducts.map((product, index) => {
-                      const costPerUnit = product.totalCost / product.totalSales
-                      const revenuePerUnit = product.totalRevenue / product.totalSales
-
-                      return (
-                        <TableRow key={product.id}>
-                          <TableCell className="font-medium">
-                            {index === 0 && <Trophy className="h-4 w-4 text-yellow-500 inline" />}
-                            {index === 1 && <Star className="h-4 w-4 text-gray-400 inline" />}
-                            {index === 2 && <Star className="h-4 w-4 text-orange-400 inline" />}
-                            {index > 2 && <span className="text-muted-foreground">{index + 1}</span>}
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium text-sm">{product.name}</div>
-                              <div className="text-xs text-muted-foreground">{product.sku}</div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-xs">{product.category.split(">")[0]}</TableCell>
-                          <TableCell className="text-xs">{product.brand}</TableCell>
-                          <TableCell className="text-right font-semibold">{product.totalSales}</TableCell>
-                          <TableCell className="text-right text-sm text-red-600">{formatCurrency(costPerUnit)}</TableCell>
-                          <TableCell className="text-right text-sm text-blue-600">{formatCurrency(revenuePerUnit)}</TableCell>
-                          <TableCell className="text-right text-sm text-green-600 font-semibold">
-                            {formatCurrency(product.profit)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Badge variant={product.profitMargin >= 35 ? "default" : "secondary"} className="text-xs">
-                              %{product.profitMargin.toFixed(1)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <span className="text-xs">{product.currentStock}</span>
-                          </TableCell>
+                {loading ? (
+                  <div className="text-center py-8 text-gray-500">Yükleniyor...</div>
+                ) : filterProducts(bestSellers).length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">Ürün bulunamadı</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-gray-50 dark:bg-gray-800/50">
+                          <TableHead className="text-xs w-12">Görsel</TableHead>
+                          <TableHead className="text-xs">Stok Kodu</TableHead>
+                          <TableHead className="text-xs">Ürün Adı</TableHead>
+                          <TableHead className="text-xs text-right">Satış Adedi</TableHead>
+                          <TableHead className="text-xs text-right">Son Alış</TableHead>
+                          <TableHead className="text-xs text-right">Son Satış</TableHead>
+                          <TableHead className="text-xs text-right">Toplam Gelir</TableHead>
+                          <TableHead className="text-xs text-right">Toplam Kar</TableHead>
+                          <TableHead className="text-xs text-right">Kar Marjı</TableHead>
                         </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Most Profitable Products */}
-          <TabsContent value="most-profitable" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <DollarSign className="h-4 w-4 text-green-600" />
-                  En Karlı 50 Ürün
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  Kar marjı bazında en iyi performans gösteren satılan ürünler
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-12">#</TableHead>
-                      <TableHead>Ürün</TableHead>
-                      <TableHead>Kategori</TableHead>
-                      <TableHead>Marka</TableHead>
-                      <TableHead className="text-right">Satış Adedi</TableHead>
-                      <TableHead className="text-right">Alış Fiyatı</TableHead>
-                      <TableHead className="text-right">Satış Fiyatı</TableHead>
-                      <TableHead className="text-right">Kar</TableHead>
-                      <TableHead className="text-right">Kar Marjı</TableHead>
-                      <TableHead className="text-right">Stok</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {mostProfitableProducts.map((product, index) => {
-                      const costPerUnit = product.totalCost / product.totalSales
-                      const revenuePerUnit = product.totalRevenue / product.totalSales
-
-                      return (
-                        <TableRow key={product.id}>
-                          <TableCell className="font-medium text-muted-foreground">{index + 1}</TableCell>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium text-sm">{product.name}</div>
-                              <div className="text-xs text-muted-foreground">{product.sku}</div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-xs">{product.category.split(">")[0]}</TableCell>
-                          <TableCell className="text-xs">{product.brand}</TableCell>
-                          <TableCell className="text-right font-semibold">{product.totalSales}</TableCell>
-                          <TableCell className="text-right text-sm text-red-600">{formatCurrency(costPerUnit)}</TableCell>
-                          <TableCell className="text-right text-sm text-blue-600">{formatCurrency(revenuePerUnit)}</TableCell>
-                          <TableCell className="text-right text-sm text-green-600 font-semibold">
-                            {formatCurrency(product.profit)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Badge
-                              variant={product.profitMargin >= 35 ? "default" : "secondary"}
-                              className={product.profitMargin >= 35 ? "bg-green-600" : ""}
-                            >
-                              %{product.profitMargin.toFixed(1)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <span className="text-xs">{product.currentStock}</span>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Low Selling Products */}
-          <TabsContent value="low-selling" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <TrendingDown className="h-4 w-4 text-red-600" />
-                  En Az Satan 50 Ürün
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  Satılan ürünler arasında en düşük satış adedine sahip ürünler
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-12">#</TableHead>
-                      <TableHead>Ürün</TableHead>
-                      <TableHead>Kategori</TableHead>
-                      <TableHead>Marka</TableHead>
-                      <TableHead className="text-right">Satış Adedi</TableHead>
-                      <TableHead className="text-right">Alış Fiyatı</TableHead>
-                      <TableHead className="text-right">Satış Fiyatı</TableHead>
-                      <TableHead className="text-right">Kar</TableHead>
-                      <TableHead className="text-right">Kar Marjı</TableHead>
-                      <TableHead className="text-right">Stok</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {lowSellingProducts.map((product, index) => {
-                      const costPerUnit = product.totalCost / product.totalSales
-                      const revenuePerUnit = product.totalRevenue / product.totalSales
-
-                      return (
-                        <TableRow key={product.id}>
-                          <TableCell className="font-medium text-muted-foreground">{index + 1}</TableCell>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium text-sm">{product.name}</div>
-                              <div className="text-xs text-muted-foreground">{product.sku}</div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-xs">{product.category.split(">")[0]}</TableCell>
-                          <TableCell className="text-xs">{product.brand}</TableCell>
-                          <TableCell className="text-right font-semibold text-red-600">{product.totalSales}</TableCell>
-                          <TableCell className="text-right text-sm text-red-600">{formatCurrency(costPerUnit)}</TableCell>
-                          <TableCell className="text-right text-sm text-blue-600">{formatCurrency(revenuePerUnit)}</TableCell>
-                          <TableCell className="text-right text-sm text-green-600 font-semibold">
-                            {formatCurrency(product.profit)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Badge variant={product.profitMargin >= 35 ? "default" : "secondary"} className="text-xs">
-                              %{product.profitMargin.toFixed(1)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <span className="text-xs">{product.currentStock}</span>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Critical Stock */}
-          <TabsContent value="critical-stock" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <AlertTriangle className="h-4 w-4 text-orange-600" />
-                  Kritik Stok Durumu
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  Stok azlığı olan ürünler - Acil tedarik gerekebilir
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Ürün</TableHead>
-                      <TableHead>Marka</TableHead>
-                      <TableHead className="text-right">Günlük Ort. Satış</TableHead>
-                      <TableHead className="text-right">Mevcut Stok</TableHead>
-                      <TableHead className="text-right">Tahmini Tükenme</TableHead>
-                      <TableHead>Durum</TableHead>
-                      <TableHead>Aksiyon</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {criticalStockProducts.map((product) => {
-                      const avgDailySales = Math.round(product.totalSales / 30)
-                      const daysUntilEmpty = avgDailySales > 0 ? Math.floor(product.currentStock / avgDailySales) : 999
-
-                      return (
-                        <TableRow key={product.id}>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium text-sm">{product.name}</div>
-                              <div className="text-xs text-muted-foreground">{product.sku}</div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-sm">{product.brand}</TableCell>
-                          <TableCell className="text-right font-semibold">{avgDailySales} adet/gün</TableCell>
-                          <TableCell className="text-right">
-                            <span className={product.currentStock < 20 ? "text-red-600 font-bold" : "text-orange-600 font-semibold"}>
-                              {product.currentStock} adet
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Badge variant={daysUntilEmpty < 7 ? "destructive" : "secondary"} className="text-xs">
-                              {daysUntilEmpty < 999 ? `~${daysUntilEmpty} gün` : "Satış yok"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{getStockStatusBadge(product.stockStatus)}</TableCell>
-                          <TableCell>
-                            <Button size="sm" variant={product.stockStatus === "critical" ? "destructive" : "outline"} className="h-7 text-xs">
-                              <Package className="h-3 w-3 mr-1" />
-                              Sipariş Ver
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* High Returns */}
-          <TabsContent value="high-returns" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <XCircle className="h-4 w-4 text-red-600" />
-                  Yüksek İade Oranı
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  %3 üzeri iade oranına sahip ürünler - Kalite kontrolü gerekebilir
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Ürün</TableHead>
-                      <TableHead>Kategori</TableHead>
-                      <TableHead className="text-right">Toplam Satış</TableHead>
-                      <TableHead className="text-right">İade Oranı</TableHead>
-                      <TableHead className="text-right">Tahmini İade</TableHead>
-                      <TableHead>Risk Seviyesi</TableHead>
-                      <TableHead>Öneri</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {highReturnProducts.map((product) => {
-                      const estimatedReturns = Math.round(product.totalSales * (product.returnRate / 100))
-                      const riskLevel = product.returnRate > 7 ? "high" : product.returnRate > 5 ? "medium" : "low"
-
-                      return (
-                        <TableRow key={product.id}>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium text-sm">{product.name}</div>
-                              <div className="text-xs text-muted-foreground">{product.sku} - {product.brand}</div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-xs">{product.category.split(">")[0]}</TableCell>
-                          <TableCell className="text-right font-semibold">{product.totalSales} adet</TableCell>
-                          <TableCell className="text-right">
-                            <span className="text-red-600 font-bold">%{product.returnRate.toFixed(1)}</span>
-                          </TableCell>
-                          <TableCell className="text-right text-red-600">~{estimatedReturns} adet</TableCell>
-                          <TableCell>
-                            {riskLevel === "high" && (
-                              <Badge variant="destructive" className="text-xs">
-                                Yüksek Risk
-                              </Badge>
-                            )}
-                            {riskLevel === "medium" && (
-                              <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-700">
-                                Orta Risk
-                              </Badge>
-                            )}
-                            {riskLevel === "low" && (
-                              <Badge variant="secondary" className="text-xs bg-yellow-100 text-yellow-700">
-                                Düşük Risk
-                              </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {riskLevel === "high" && (
-                              <div className="text-xs text-red-600 font-semibold flex items-center gap-1">
-                                <AlertCircle className="h-3 w-3" />
-                                Satışı Durdur
-                              </div>
-                            )}
-                            {riskLevel === "medium" && (
-                              <div className="text-xs text-orange-600 flex items-center gap-1">
-                                <AlertTriangle className="h-3 w-3" />
-                                Kalite Kontrolü
-                              </div>
-                            )}
-                            {riskLevel === "low" && (
-                              <div className="text-xs text-yellow-600 flex items-center gap-1">
-                                <Clock className="h-3 w-3" />
-                                Takip Et
-                              </div>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Analytics */}
-          <TabsContent value="analytics" className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              {/* Category Performance */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <Tags className="h-4 w-4 text-purple-600" />
-                    Kategori Bazında Performans
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {categoryData.map((category, index) => {
-                      const totalRevenue = categoryData.reduce((sum, c) => sum + c.revenue, 0)
-                      const percentage = (category.revenue / totalRevenue) * 100
-
-                      return (
-                        <div key={category.name} className="space-y-1">
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="font-medium">{category.name}</span>
-                            <span className="text-muted-foreground">{formatCurrency(category.revenue)}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Progress value={percentage} className="h-2" />
-                            <span className="text-xs text-muted-foreground w-12 text-right">
-                              %{percentage.toFixed(1)}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between text-xs text-muted-foreground">
-                            <span>{category.orders} sipariş</span>
-                            <span>{category.sales} adet</span>
-                          </div>
-                        </div>
-                      )
-                    })}
+                      </TableHeader>
+                      <TableBody>
+                        {filterProducts(bestSellers).map((product, index) => (
+                          <TableRow key={index} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                            <TableCell>
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <div className="w-10 h-10 bg-gray-100 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 flex items-center justify-center overflow-hidden cursor-pointer">
+                                      {product.imageUrl ? (
+                                        <Image
+                                          src={product.imageUrl}
+                                          alt={product.productName}
+                                          width={40}
+                                          height={40}
+                                          className="object-cover"
+                                        />
+                                      ) : (
+                                        <Package className="h-5 w-5 text-gray-400" />
+                                      )}
+                                    </div>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="right">
+                                    <div className="w-64 h-64 flex items-center justify-center bg-white dark:bg-gray-800 rounded-lg overflow-hidden">
+                                      {product.imageUrl ? (
+                                        <Image
+                                          src={product.imageUrl}
+                                          alt={product.productName}
+                                          width={256}
+                                          height={256}
+                                          className="object-contain"
+                                        />
+                                      ) : (
+                                        <Package className="h-16 w-16 text-gray-400" />
+                                      )}
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            </TableCell>
+                            <TableCell className="text-xs font-medium">{product.stockCode || "-"}</TableCell>
+                            <TableCell className="text-xs max-w-xs truncate">{product.productName}</TableCell>
+                            <TableCell className="text-xs text-right font-semibold">{product.totalSold}</TableCell>
+                            <TableCell className="text-xs text-right text-orange-600 dark:text-orange-400">
+                              {formatCurrency(product.lastPurchasePrice)}
+                            </TableCell>
+                            <TableCell className="text-xs text-right font-semibold">
+                              {formatCurrency(product.lastSalePrice)}
+                            </TableCell>
+                            <TableCell className="text-xs text-right font-bold text-blue-600 dark:text-blue-400">
+                              {formatCurrency(product.totalRevenue)}
+                            </TableCell>
+                            <TableCell className="text-xs text-right font-bold text-green-600 dark:text-green-500">
+                              {formatCurrency(product.totalProfit)}
+                            </TableCell>
+                            <TableCell className="text-xs text-right">
+                              <span className={
+                                product.profitMargin >= 20
+                                  ? "text-green-600 dark:text-green-500 font-semibold"
+                                  : product.profitMargin >= 10
+                                  ? "text-amber-600 dark:text-amber-500 font-semibold"
+                                  : "text-red-600 dark:text-red-500 font-semibold"
+                              }>
+                                %{product.profitMargin.toFixed(1)}
+                              </span>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
-                </CardContent>
-              </Card>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-              {/* Brand Performance */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <Building2 className="h-4 w-4 text-indigo-600" />
-                    Marka Bazında Performans
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {brandData.map((brand) => {
-                      const totalRevenue = brandData.reduce((sum, b) => sum + b.revenue, 0)
-                      const percentage = (brand.revenue / totalRevenue) * 100
-
-                      return (
-                        <div key={brand.name} className="space-y-1">
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="font-medium">{brand.name}</span>
-                            <span className="text-muted-foreground">{formatCurrency(brand.revenue)}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Progress value={percentage} className="h-2" />
-                            <span className="text-xs text-muted-foreground w-12 text-right">
-                              %{percentage.toFixed(1)}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between text-xs text-muted-foreground">
-                            <span>{brand.products} ürün</span>
-                            <span>{brand.sales} adet satış</span>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Price Range Analysis */}
+          {/* Returns Tab */}
+          <TabsContent value="returns" className="mt-6">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <BarChart3 className="h-4 w-4 text-blue-600" />
-                  Fiyat Aralığı Analizi
+                <CardTitle className="text-base flex items-center gap-2">
+                  <AlertCircle className="h-5 w-5 text-red-600" />
+                  Yüksek İade Oranına Sahip Ürünler
                 </CardTitle>
-                <CardDescription className="text-xs">
-                  Ürünlerin fiyat aralıklarına göre dağılımı ve satış performansı
-                </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {[
-                    { range: "0-250₺", min: 0, max: 250 },
-                    { range: "250-500₺", min: 250, max: 500 },
-                    { range: "500-1000₺", min: 500, max: 1000 },
-                    { range: "1000-2000₺", min: 1000, max: 2000 },
-                    { range: "2000₺+", min: 2000, max: Infinity },
-                  ].map((priceRange) => {
-                    const products = productsData.filter(
-                      p => p.avgPrice >= priceRange.min && p.avgPrice < priceRange.max
-                    )
-                    const totalSales = products.reduce((sum, p) => sum + p.totalSales, 0)
-                    const totalRevenue = products.reduce((sum, p) => sum + p.totalRevenue, 0)
-                    const maxSales = Math.max(...productsData.map(p => p.totalSales))
-                    const percentage = (totalSales / maxSales) * 100
+                {loading ? (
+                  <div className="text-center py-8 text-gray-500">Yükleniyor...</div>
+                ) : filterProducts(returns).length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <AlertCircle className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                    <p className="text-sm">İade takip sistemi henüz aktif değil</p>
+                    <p className="text-xs text-gray-400 mt-1">İade edilen ürünler burada listelenecek</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-gray-50 dark:bg-gray-800/50">
+                          <TableHead className="text-xs w-12">Görsel</TableHead>
+                          <TableHead className="text-xs">Stok Kodu</TableHead>
+                          <TableHead className="text-xs">Ürün Adı</TableHead>
+                          <TableHead className="text-xs text-right">Toplam Satış</TableHead>
+                          <TableHead className="text-xs text-right">İade Adedi</TableHead>
+                          <TableHead className="text-xs text-right">İade Oranı</TableHead>
+                          <TableHead className="text-xs text-right">Son Alış</TableHead>
+                          <TableHead className="text-xs text-right">Son Satış</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filterProducts(returns).map((product, index) => {
+                          const returnRate = product.totalSold > 0 ? (product.totalReturned / product.totalSold) * 100 : 0
+                          return (
+                            <TableRow key={index} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                              <TableCell>
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <div className="w-10 h-10 bg-gray-100 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 flex items-center justify-center overflow-hidden cursor-pointer">
+                                        {product.imageUrl ? (
+                                          <Image
+                                            src={product.imageUrl}
+                                            alt={product.productName}
+                                            width={40}
+                                            height={40}
+                                            className="object-cover"
+                                          />
+                                        ) : (
+                                          <Package className="h-5 w-5 text-gray-400" />
+                                        )}
+                                      </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="right">
+                                      <div className="w-64 h-64 flex items-center justify-center bg-white dark:bg-gray-800 rounded-lg overflow-hidden">
+                                        {product.imageUrl ? (
+                                          <Image
+                                            src={product.imageUrl}
+                                            alt={product.productName}
+                                            width={256}
+                                            height={256}
+                                            className="object-contain"
+                                          />
+                                        ) : (
+                                          <Package className="h-16 w-16 text-gray-400" />
+                                        )}
+                                      </div>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              </TableCell>
+                              <TableCell className="text-xs font-medium">{product.stockCode || "-"}</TableCell>
+                              <TableCell className="text-xs max-w-xs truncate">{product.productName}</TableCell>
+                              <TableCell className="text-xs text-right">{product.totalSold}</TableCell>
+                              <TableCell className="text-xs text-right font-semibold text-red-600 dark:text-red-400">
+                                {product.totalReturned}
+                              </TableCell>
+                              <TableCell className="text-xs text-right">
+                                <span className={
+                                  returnRate >= 20
+                                    ? "text-red-600 dark:text-red-500 font-bold"
+                                    : returnRate >= 10
+                                    ? "text-amber-600 dark:text-amber-500 font-semibold"
+                                    : "text-gray-600 dark:text-gray-400"
+                                }>
+                                  %{returnRate.toFixed(1)}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-xs text-right text-orange-600 dark:text-orange-400">
+                                {formatCurrency(product.lastPurchasePrice)}
+                              </TableCell>
+                              <TableCell className="text-xs text-right font-semibold">
+                                {formatCurrency(product.lastSalePrice)}
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-                    return (
-                      <div key={priceRange.range} className="space-y-1">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="font-medium">{priceRange.range}</span>
-                          <div className="flex items-center gap-3">
-                            <span className="text-muted-foreground">{products.length} ürün</span>
-                            <span className="text-muted-foreground">{totalSales} satış</span>
-                            <span className="font-semibold">{formatCurrency(totalRevenue)}</span>
-                          </div>
-                        </div>
-                        <Progress value={percentage} className="h-2" />
-                      </div>
-                    )
-                  })}
-                </div>
+          {/* Most Profitable Tab */}
+          <TabsContent value="most-profitable" className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <DollarSign className="h-5 w-5 text-green-600" />
+                  En Kârlı Ürünler
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {loading ? (
+                  <div className="text-center py-8 text-gray-500">Yükleniyor...</div>
+                ) : filterProducts(mostProfitable).length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">Ürün bulunamadı</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-gray-50 dark:bg-gray-800/50">
+                          <TableHead className="text-xs w-12">Görsel</TableHead>
+                          <TableHead className="text-xs">Stok Kodu</TableHead>
+                          <TableHead className="text-xs">Ürün Adı</TableHead>
+                          <TableHead className="text-xs text-right">Satış Adedi</TableHead>
+                          <TableHead className="text-xs text-right">Son Alış</TableHead>
+                          <TableHead className="text-xs text-right">Son Satış</TableHead>
+                          <TableHead className="text-xs text-right">Toplam Gelir</TableHead>
+                          <TableHead className="text-xs text-right">Toplam Kar</TableHead>
+                          <TableHead className="text-xs text-right">Kar Marjı</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filterProducts(mostProfitable).map((product, index) => (
+                          <TableRow key={index} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                            <TableCell>
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <div className="w-10 h-10 bg-gray-100 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 flex items-center justify-center overflow-hidden cursor-pointer">
+                                      {product.imageUrl ? (
+                                        <Image
+                                          src={product.imageUrl}
+                                          alt={product.productName}
+                                          width={40}
+                                          height={40}
+                                          className="object-cover"
+                                        />
+                                      ) : (
+                                        <Package className="h-5 w-5 text-gray-400" />
+                                      )}
+                                    </div>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="right">
+                                    <div className="w-64 h-64 flex items-center justify-center bg-white dark:bg-gray-800 rounded-lg overflow-hidden">
+                                      {product.imageUrl ? (
+                                        <Image
+                                          src={product.imageUrl}
+                                          alt={product.productName}
+                                          width={256}
+                                          height={256}
+                                          className="object-contain"
+                                        />
+                                      ) : (
+                                        <Package className="h-16 w-16 text-gray-400" />
+                                      )}
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            </TableCell>
+                            <TableCell className="text-xs font-medium">{product.stockCode || "-"}</TableCell>
+                            <TableCell className="text-xs max-w-xs truncate">{product.productName}</TableCell>
+                            <TableCell className="text-xs text-right">{product.totalSold}</TableCell>
+                            <TableCell className="text-xs text-right text-orange-600 dark:text-orange-400">
+                              {formatCurrency(product.lastPurchasePrice)}
+                            </TableCell>
+                            <TableCell className="text-xs text-right font-semibold">
+                              {formatCurrency(product.lastSalePrice)}
+                            </TableCell>
+                            <TableCell className="text-xs text-right font-bold text-blue-600 dark:text-blue-400">
+                              {formatCurrency(product.totalRevenue)}
+                            </TableCell>
+                            <TableCell className="text-xs text-right font-bold text-green-600 dark:text-green-500">
+                              {formatCurrency(product.totalProfit)}
+                            </TableCell>
+                            <TableCell className="text-xs text-right">
+                              <span className={
+                                product.profitMargin >= 20
+                                  ? "text-green-600 dark:text-green-500 font-semibold"
+                                  : product.profitMargin >= 10
+                                  ? "text-amber-600 dark:text-amber-500 font-semibold"
+                                  : "text-red-600 dark:text-red-500 font-semibold"
+                              }>
+                                %{product.profitMargin.toFixed(1)}
+                              </span>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

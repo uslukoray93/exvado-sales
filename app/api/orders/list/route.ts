@@ -66,10 +66,14 @@ export async function GET(request: NextRequest) {
 
     // Transform orders to match frontend format
     const transformedOrders = orders.map((order) => {
-      const totalSale = order.items.reduce(
-        (sum, item) => sum + item.salePrice * item.quantity,
-        0
-      )
+      // Bolbolbul için orderTotal varsa onu kullan (KDV dahil toplam tutar)
+      // Diğer platformlar için items'dan hesapla
+      const totalSale = (order.platform === 'BOLBOLBUL' && order.orderTotal)
+        ? order.orderTotal
+        : order.items.reduce(
+            (sum, item) => sum + item.salePrice * item.quantity,
+            0
+          )
       const totalPurchase = order.items.reduce(
         (sum, item) => sum + item.purchasePrice * item.quantity,
         0
@@ -99,6 +103,8 @@ export async function GET(request: NextRequest) {
           imageUrl: item.imageUrl,
         })),
         status: order.status.toLowerCase().replace('_', ''),
+        ticimaxStatus: order.ticimaxStatus,  // Ticimax orijinal durum adı (Bolbolbul için)
+        orderTotal: order.orderTotal,  // Ticimax ToplamTutar: KDV dahil toplam sipariş tutarı (Bolbolbul için)
         commissionRate: order.commissionRate,
         shippingCost: order.shippingCost,
         orderDate: order.orderDate.toISOString(),

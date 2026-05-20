@@ -219,6 +219,56 @@ async function fetchProductImages(order: any) {
 }
 
 /**
+ * Fetch purchase prices from Bolbolbul XML feed using stock codes
+ */
+async function fetchPurchasePrices(order: any) {
+  const prices: Record<string, number> = {}
+
+  try {
+    // Import Bolbolbul XML client
+    const { getBolbolbulXMLClient } = await import('@/lib/api/bolbolbul-xml')
+    const bolbolbulClient = getBolbolbulXMLClient()
+
+    // Collect all stock codes from order items/lines (REST API uses 'lines')
+    const stockCodes: string[] = []
+    for (const line of order.lines || order.items || []) {
+      const stockCode = line.stockCode || line.productSellerCode
+      if (stockCode) {
+        stockCodes.push(stockCode)
+      }
+    }
+
+    if (stockCodes.length === 0) {
+      return prices
+    }
+
+    console.log(`💰 Fetching purchase prices for ${stockCodes.length} products from Bolbolbul XML...`)
+
+    // Fetch purchase prices from XML
+    const priceMap = await bolbolbulClient.getPurchasePrices(stockCodes)
+
+    // Map prices to item IDs (REST API uses 'lines' instead of 'items')
+    for (const line of order.lines || order.items || []) {
+      const stockCode = line.stockCode || line.productSellerCode
+      if (stockCode) {
+        const purchasePrice = priceMap.get(stockCode)
+        if (purchasePrice) {
+          prices[String(line.orderLineId || line.id)] = purchasePrice
+          console.log(`✅ Found purchase price for ${line.productName} (${stockCode}): ${purchasePrice} TL`)
+        } else {
+          console.log(`⚠️  No purchase price found for ${line.productName} (${stockCode})`)
+        }
+      }
+    }
+
+  } catch (error: any) {
+    console.error('❌ Failed to fetch purchase prices from Bolbolbul XML:', error.message)
+  }
+
+  return prices
+}
+
+/**
  * Sync a single order to database
  */
 async function syncOrder(order: any) {
@@ -296,18 +346,15 @@ async function syncOrder(order: any) {
     }
   }
 
-  // N11'de fatura kontrolü: Status 8, 9, 10 (Delivered) = Faturalı
-  // REST API'de shipmentPackageStatus string: "Delivered"
-  const n11StatusStr = String(order.shipmentPackageStatus || order.status)
-  const isInvoiced = n11StatusStr === 'Delivered' || ['8', '9', '10'].includes(n11StatusStr)
-
-  // 7+ günlük DELIVERED siparişler otomatik COMPLETED olur (N11 otomatik faturalıyor)
+  // AUTO-COMPLETE: 7+ günlük DELIVERED siparişleri otomatik COMPLETED yap
   const orderDate = new Date(order.lastModifiedDate)
   const daysSinceOrder = Math.floor((Date.now() - orderDate.getTime()) / (1000 * 60 * 60 * 24))
-  const autoCompleted = mappedStatus === OrderStatus.DELIVERED && daysSinceOrder >= 7
 
-  const finalStatus = (isInvoiced || autoCompleted) ? OrderStatus.COMPLETED : mappedStatus
-  const finalInvoiceStatus = isInvoiced || autoCompleted
+  let finalStatus = mappedStatus
+  if (mappedStatus === OrderStatus.DELIVERED && daysSinceOrder >= 7) {
+    console.log(`📦 Sipariş ${daysSinceOrder} gün önce teslim edildi, otomatik COMPLETED yapılıyor`)
+    finalStatus = OrderStatus.COMPLETED
+  }
 
   // Fetch product images ONLY if this is a new order or existing order has missing images
   let productImages: Record<string, string> = {}
@@ -340,6 +387,17 @@ async function syncOrder(order: any) {
     }
   }
 
+  // Fetch purchase prices from Bolbolbul XML (for ALL orders - new and existing)
+  let purchasePrices: Record<string, number> = {}
+  console.log(`💰 Fetching purchase prices from Bolbolbul XML for order ${order.orderNumber}...`)
+  try {
+    purchasePrices = await fetchPurchasePrices(order)
+    console.log(`💰 Found purchase prices for ${Object.keys(purchasePrices).length} products`)
+  } catch (error: any) {
+    console.error(`❌ Failed to fetch purchase prices for order ${order.orderNumber}:`, error.message)
+    // Continue without prices - can be manually entered later
+  }
+
   // UPSERT: orderNumber ile unique kontrolü (duplicate önleme)
   const dbOrder = await prisma.order.upsert({
     where: {
@@ -354,7 +412,6 @@ async function syncOrder(order: any) {
       trackingNumber: order.cargoTrackingNumber || undefined,
       cargoCompany: cargoCompany,
       commissionRate: 15, // N11 default commission
-      invoiceUploaded: finalInvoiceStatus,
       // KRİTİK: Items'e DOKUNMA - Görseller kaybolmasın!
       // Items sadece post-update hook ile güncellenecek (satır 308+)
     },
@@ -366,7 +423,6 @@ async function syncOrder(order: any) {
       customerPhone: order.shippingAddress?.gsm || 'Belirtilmemiş',
       customerAddress: `${order.shippingAddress?.address || ''}, ${order.shippingAddress?.neighborhood || ''}, ${order.shippingAddress?.district || ''}, ${order.shippingAddress?.city || ''}`.trim() || 'Unknown',
       status: finalStatus,
-      invoiceUploaded: finalInvoiceStatus,
       orderDate: new Date(order.lastModifiedDate),
       trackingNumber: order.cargoTrackingNumber || undefined,
       cargoCompany: cargoCompany,
@@ -375,13 +431,15 @@ async function syncOrder(order: any) {
       items: {
         create: (order.lines || []).map((line: any) => {
           const imageUrl = productImages[String(line.orderLineId)]
+          const purchasePrice = purchasePrices[String(line.orderLineId)]
+
           // ONLY set imageUrl if we actually have one - don't set null!
           const itemData: any = {
             productName: line.productName,
             stockCode: line.stockCode || null,
             sku: String(line.orderLineId),
             quantity: line.quantity,
-            purchasePrice: 0, // Will be updated manually
+            purchasePrice: purchasePrice || 0, // Use Bolbolbul price if found, else 0
             salePrice: line.price,
           }
           if (imageUrl) {
@@ -396,7 +454,7 @@ async function syncOrder(order: any) {
     },
   })
 
-  // KESİN ÇÖZÜM: MEVCUT SİPARİŞLERDE görselleri koru ve eksikleri doldur
+  // KESİN ÇÖZÜM: MEVCUT SİPARİŞLERDE görselleri ve fiyatları koru ve eksikleri doldur
   if (existingOrder) {
     // Mevcut items'ları al (upsert sonrası güncel hali)
     const currentItems = await prisma.orderItem.findMany({
@@ -404,28 +462,44 @@ async function syncOrder(order: any) {
     })
 
     for (const dbItem of currentItems) {
-      // Eğer item'da zaten görsel varsa, DOKUNMA!
-      if (dbItem.imageUrl && dbItem.imageUrl !== '') {
-        console.log(`✅ KORUNDU: ${dbItem.productName} - Görsel zaten var`)
-        continue
-      }
-
-      // Görsel yoksa, XML'den çekmeye çalış
       const newItem = order.lines.find((i: any) => String(i.orderLineId) === dbItem.sku)
       if (!newItem) continue
 
-      const imageUrl = productImages[String(newItem.orderLineId)]
+      const updateData: any = {}
 
-      if (imageUrl) {
-        // Görsel bulundu, ekle
+      // Görsel kontrolü - Eğer item'da zaten görsel varsa, DOKUNMA!
+      if (dbItem.imageUrl && dbItem.imageUrl !== '') {
+        console.log(`✅ KORUNDU: ${dbItem.productName} - Görsel zaten var`)
+      } else {
+        // Görsel yoksa, XML'den çekmeye çalış
+        const imageUrl = productImages[String(newItem.orderLineId)]
+        if (imageUrl) {
+          updateData.imageUrl = imageUrl
+          console.log(`✅ GÖRSEL EKLENDİ: ${dbItem.productName} - ${imageUrl}`)
+        } else {
+          console.log(`⚠️  GÖRSEL EKSİK: ${dbItem.productName} (${dbItem.stockCode}) - XML'de bulunamadı`)
+        }
+      }
+
+      // Alış fiyatı kontrolü - Eğer 0 ise veya yoksa, Bolbolbul'dan al
+      if (!dbItem.purchasePrice || dbItem.purchasePrice === 0) {
+        const purchasePrice = purchasePrices[String(newItem.orderLineId)]
+        if (purchasePrice && purchasePrice > 0) {
+          updateData.purchasePrice = purchasePrice
+          console.log(`💰 FİYAT EKLENDİ: ${dbItem.productName} - ${purchasePrice} TL`)
+        } else {
+          console.log(`⚠️  FİYAT EKSİK: ${dbItem.productName} (${dbItem.stockCode}) - Bolbolbul XML'de bulunamadı`)
+        }
+      } else {
+        console.log(`✅ FİYAT KORUNDU: ${dbItem.productName} - ${dbItem.purchasePrice} TL`)
+      }
+
+      // Eğer güncelleme gerekiyorsa, update yap
+      if (Object.keys(updateData).length > 0) {
         await prisma.orderItem.update({
           where: { id: dbItem.id },
-          data: { imageUrl },
+          data: updateData,
         })
-        console.log(`✅ EKLENDİ: ${dbItem.productName} - ${imageUrl}`)
-      } else {
-        // Görsel bulunamadı, warning ver
-        console.log(`⚠️  EKSİK: ${dbItem.productName} (${dbItem.stockCode}) - XML'de bulunamadı`)
       }
     }
   }
