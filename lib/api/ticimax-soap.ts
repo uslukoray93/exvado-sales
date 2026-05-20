@@ -482,23 +482,16 @@ class TicimaxSOAPClient {
     cargoCompany?: string
   ): Promise<void> {
     try {
-      const client = await this.getClient()
-
-      const args = {
-        UyeKodu: this.wsAuthCode,
-        SiparisID: orderId,
-        KargoTakipNo: trackingNumber,
-        KargoFirmaAdi: cargoCompany || '',
-      }
+      const soapBody = `<tem:SetSiparisKargoyaVerildi xmlns:tem="http://tempuri.org/">
+  <tem:UyeKodu>${this.wsAuthCode}</tem:UyeKodu>
+  <tem:SiparisID>${orderId}</tem:SiparisID>
+  <tem:KargoTakipNo>${trackingNumber}</tem:KargoTakipNo>
+  <tem:KargoFirmaAdi>${cargoCompany || ''}</tem:KargoFirmaAdi>
+</tem:SetSiparisKargoyaVerildi>`
 
       console.log(`📤 Ticimax SetSiparisKargoyaVerildi request for order ${orderId}`)
 
-      await new Promise((resolve, reject) => {
-        client.SetSiparisKargoyaVerildi(args, (err: any, result: any) => {
-          if (err) reject(err)
-          else resolve(result)
-        })
-      })
+      await this.makeSoapRequest('SetSiparisKargoyaVerildi', soapBody)
 
       console.log(`✅ Order ${orderId} marked as shipped`)
     } catch (error: any) {
@@ -514,22 +507,15 @@ class TicimaxSOAPClient {
    */
   async saveKargoTakipNo(orderId: number, trackingNumber: string): Promise<void> {
     try {
-      const client = await this.getClient()
-
-      const args = {
-        UyeKodu: this.wsAuthCode,
-        SiparisID: orderId,
-        KargoTakipNo: trackingNumber,
-      }
+      const soapBody = `<tem:SaveKargoTakipNo xmlns:tem="http://tempuri.org/">
+  <tem:UyeKodu>${this.wsAuthCode}</tem:UyeKodu>
+  <tem:SiparisID>${orderId}</tem:SiparisID>
+  <tem:KargoTakipNo>${trackingNumber}</tem:KargoTakipNo>
+</tem:SaveKargoTakipNo>`
 
       console.log(`📤 Ticimax SaveKargoTakipNo request for order ${orderId}`)
 
-      await new Promise((resolve, reject) => {
-        client.SaveKargoTakipNo(args, (err: any, result: any) => {
-          if (err) reject(err)
-          else resolve(result)
-        })
-      })
+      await this.makeSoapRequest('SaveKargoTakipNo', soapBody)
 
       console.log(`✅ Tracking number saved for order ${orderId}`)
     } catch (error: any) {
@@ -545,24 +531,38 @@ class TicimaxSOAPClient {
    */
   async setSiparisDurum(orderId: number, statusId: number): Promise<void> {
     try {
-      const client = await this.getClient()
-
-      const args = {
-        UyeKodu: this.wsAuthCode,
-        SiparisID: orderId,
-        SiparisDurumID: statusId,
+      // Map statusId to Ticimax enum string
+      const durumMap: Record<number, string> = {
+        0: 'OnSiparis',          // Ön sipariş
+        1: 'OnayBekliyor',       // Onay bekliyor
+        2: 'Onaylandi',          // Onaylandı
+        3: 'OdemeBekliyor',      // Ödeme bekliyor
+        4: 'Paketleniyor',       // Paketleniyor
+        5: 'TedarikEdiliyor',    // Tedarik ediliyor
+        6: 'KargoyaVerildi',     // Kargoya verildi
+        7: 'TeslimEdildi',       // Teslim edildi
+        8: 'Iptal',              // İptal edildi
+        9: 'Iade',               // İade edildi
       }
 
-      console.log(`📤 Ticimax SetSiparisDurum request for order ${orderId}, status ${statusId}`)
+      const durumString = durumMap[statusId]
+      if (!durumString) {
+        throw new Error(`Invalid status ID: ${statusId}`)
+      }
 
-      await new Promise((resolve, reject) => {
-        client.SetSiparisDurum(args, (err: any, result: any) => {
-          if (err) reject(err)
-          else resolve(result)
-        })
-      })
+      const soapBody = `<tem:SetSiparisDurum xmlns:tem="http://tempuri.org/">
+  <tem:UyeKodu>${this.wsAuthCode}</tem:UyeKodu>
+  <tem:request>
+    <tem:SiparisID>${orderId}</tem:SiparisID>
+    <tem:Durum>${durumString}</tem:Durum>
+  </tem:request>
+</tem:SetSiparisDurum>`
 
-      console.log(`✅ Order ${orderId} status updated to ${statusId}`)
+      console.log(`📤 Ticimax SetSiparisDurum request for order ${orderId}, status ${statusId} (${durumString})`)
+
+      await this.makeSoapRequest('SetSiparisDurum', soapBody)
+
+      console.log(`✅ Order ${orderId} status updated to ${durumString}`)
     } catch (error: any) {
       console.error('❌ Ticimax SetSiparisDurum error:', error.message)
       throw new Error(`Ticimax API Error: ${error.message}`)

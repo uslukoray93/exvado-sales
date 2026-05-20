@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { OrderStatus, Platform } from '@prisma/client'
 import { getTrendyolClient } from '@/lib/api/trendyol'
 import { getN11Client } from '@/lib/api/n11'
+import { getBolbolbulClient } from '@/lib/api/bolbolbul'
 
 /**
  * PATCH /api/orders/status
@@ -104,6 +105,31 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
+    // Bolbolbul Status Update (Ticimax)
+    if (order.platform === Platform.BOLBOLBUL && platformStatus) {
+      console.log(`\n🟠 Bolbolbul (Ticimax) Platform Detected`)
+      console.log(`🔍 Platform Status ID: ${platformStatus}`)
+
+      try {
+        console.log(`🔄 Ticimax API çağrısı yapılıyor...`)
+        console.log(`📦 Order Number: ${order.orderNumber}`)
+        console.log(`📦 Platform Order ID: ${order.platformOrderId}`)
+        console.log(`📝 Yeni Durum ID: ${platformStatus}`)
+
+        const bolbolbulClient = getBolbolbulClient()
+
+        // Update order status via Ticimax SOAP
+        await bolbolbulClient.updateOrderStatus(order.platformOrderId, parseInt(platformStatus))
+
+        console.log(`✅ Ticimax durumu başarıyla güncellendi`)
+        platformUpdateSuccess = true
+      } catch (error: any) {
+        console.error('\n❌ Ticimax API Hatası:', error.message)
+        console.error('Error Stack:', error.stack)
+        platformError = error.message
+      }
+    }
+
     // Trendyol Status Update
     if (order.platform === Platform.TRENDYOL && platformStatus) {
       try {
@@ -166,9 +192,12 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
-    // Only update database if platform update was successful (for N11)
+    // Only update database if platform update was successful (for N11 and Bolbolbul)
     // For other platforms, update database anyway
-    const shouldUpdateDB = order.platform !== Platform.N11 || platformUpdateSuccess || !platformError
+    const shouldUpdateDB =
+      (order.platform !== Platform.N11 && order.platform !== Platform.BOLBOLBUL) ||
+      platformUpdateSuccess ||
+      !platformError
 
     if (!shouldUpdateDB) {
       console.log(`\n❌ Platform update başarısız - Veritabanı güncellenmedi`)
@@ -248,6 +277,18 @@ function mapToPlatformStatus(internalStatus: string, platform: Platform): string
       'CANCELLED': '11'      // İptal
     }
     return n11StatusMap[statusUpper] || null
+  }
+
+  if (platform === Platform.BOLBOLBUL) {
+    const bolbolbulStatusMap: Record<string, string> = {
+      'PENDING': '1',        // Onay bekliyor
+      'PROCESSING': '4',     // Paketleniyor
+      'READY_TO_SHIP': '4',  // Paketleniyor
+      'SHIPPED': '6',        // Kargoya verildi
+      'DELIVERED': '7',      // Teslim edildi
+      'CANCELLED': '8'       // İptal edildi
+    }
+    return bolbolbulStatusMap[statusUpper] || null
   }
 
   // Add mappings for other platforms (Hepsiburada) here
