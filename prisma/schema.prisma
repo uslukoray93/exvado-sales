@@ -1,0 +1,201 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Order {
+  id                 String        @id @default(cuid())
+  orderNumber        String        @unique
+  platform           Platform
+  platformOrderId    String
+  customerName       String
+  customerPhone      String
+  customerAddress    String
+  status             OrderStatus   @default(PENDING)
+  ticimaxStatus      String?       // Ticimax orijinal durum adı (örn: "Sipariş Alındı", "Kargoya verildi")
+  commissionRate     Float?
+  shippingCost       Float         @default(0)
+  orderDate          DateTime
+  trackingNumber     String?
+  invoiceUrl         String?
+  notes              String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  agreedDeliveryDate DateTime?
+  cargoCompany       String?
+  invoiceDate        DateTime?
+  invoiceNumber      String?
+  invoiceUploaded    Boolean       @default(false)
+  paymentType        Int?          // Ticimax OdemeTipi: 0=Kredi Kartı, 1=Havale, etc.
+  paymentMethod      String?       // Ödeme yöntemi adı
+  orderTotal         Float?        // Ticimax ToplamTutar: KDV dahil toplam sipariş tutarı
+  items              OrderItem[]
+  returnClaims       ReturnClaim[]
+
+  @@index([orderDate])
+  @@index([platform])
+  @@index([status])
+  @@index([paymentType])
+}
+
+model OrderItem {
+  id            String   @id @default(cuid())
+  orderId       String
+  productName   String
+  sku           String
+  quantity      Int
+  purchasePrice Float
+  salePrice     Float
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  stockCode     String?
+  imageUrl      String?
+  Order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([sku])
+}
+
+enum OrderStatus {
+  PENDING
+  APPROVED
+  PROCESSING
+  READY_TO_SHIP
+  SHIPPED
+  DELIVERED
+  COMPLETED
+  CANCELLED
+}
+
+enum Platform {
+  TRENDYOL
+  N11
+  HEPSIBURADA
+  BOLBOLBUL
+}
+
+model CargoPrice {
+  id            String   @id @default(cuid())
+  desi          Int      @unique
+  aras          Float
+  dhl           Float
+  kolayGelsin   Float
+  ptt           Float?
+  surat         Float
+  tex           Float?
+  yurtici       Float
+  cevaTedarik   Float
+  ceva          Float
+  horoz         Float
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([desi])
+}
+
+model CargoPriceSettings {
+  id              String   @id @default(cuid())
+  markupPercent   Float    @default(20) // %20 kar marjı
+  updatedAt       DateTime @updatedAt
+  updatedBy       String?  // Kullanıcı adı
+
+  @@map("cargo_price_settings")
+}
+
+// İade Talepleri (Trendyol Claims API)
+model ReturnClaim {
+  id                  String             @id @default(cuid())
+  claimId             String             @unique // Trendyol Claim ID
+  orderNumber         String // Order reference
+  orderId             String? // Database order ID (optional relation)
+  claimDate           DateTime
+  lastModifiedDate    DateTime?
+  customerName        String
+  cargoTrackingNumber String?
+  cargoProviderName   String?
+  status              ReturnClaimStatus  @default(Created)
+  totalRefundAmount   Float              @default(0)
+  refundMethod        String? // İade yöntemi (ör: "Banka", "Kredi Kartı")
+  notes               String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  items               ReturnClaimItem[]
+  audits              ReturnClaimAudit[]
+  Order               Order?             @relation(fields: [orderId], references: [id])
+
+  @@index([claimId])
+  @@index([orderNumber])
+  @@index([status])
+  @@index([claimDate])
+}
+
+// İade Talep Ürünleri
+model ReturnClaimItem {
+  id              String          @id @default(cuid())
+  claimId         String // ReturnClaim relation
+  claimItemId     String          @unique // Trendyol Claim Item ID
+  barcode         String
+  productName     String
+  quantity        Int
+  reasonId        Int // İade nedeni ID (Trendyol)
+  reasonText      String? // İade nedeni açıklaması
+  status          String? // Item level status
+  refundAmount    Float           @default(0)
+  purchasePrice   Float           @default(0)
+  customerNote    String?
+  rejectionReason String?
+  imageUrl        String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  claim           ReturnClaim     @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  @@index([claimId])
+  @@index([barcode])
+  @@index([claimItemId])
+}
+
+// İade Geçmişi (Audit Trail)
+model ReturnClaimAudit {
+  id             String      @id @default(cuid())
+  claimId        String // ReturnClaim relation
+  claimItemId    String?
+  previousStatus String?
+  newStatus      String
+  executorName   String?
+  executorApp    String?
+  date           DateTime // Timestamp from Trendyol
+  notes          String?
+  createdAt      DateTime    @default(now())
+  claim          ReturnClaim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  @@index([claimId])
+  @@index([date])
+}
+
+// İade Red Sebepleri (Cache için)
+model ClaimIssueReason {
+  id          Int      @id // Trendyol ID
+  name        String // Turkish name
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("claim_issue_reasons")
+}
+
+enum ReturnClaimStatus {
+  Created
+  WaitingInAction
+  WaitingFraudCheck
+  Accepted
+  Unresolved
+  Rejected
+  Cancelled
+  InAnalysis
+  Completed
+}
