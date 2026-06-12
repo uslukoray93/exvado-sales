@@ -473,6 +473,257 @@ class TrendyolAPIClient {
       throw new Error(`Trendyol API Error: ${error.response?.data?.message || error.message}`)
     }
   }
+
+  /**
+   * Get return claims (iade talepleri) from Trendyol
+   * @param options - Query options (page, size, date range, status, orderNumber, claimIds)
+   */
+  async getClaims(options?: {
+    page?: number
+    size?: number
+    startDate?: number // Unix timestamp in milliseconds
+    endDate?: number // Unix timestamp in milliseconds
+    claimItemStatus?: string
+    orderNumber?: string
+    claimIds?: number[]
+  }): Promise<any> {
+    try {
+      const integrationClient = axios.create({
+        baseURL: 'https://apigw.trendyol.com/integration/order',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': `${this.supplierId} - ExvadoSales`,
+        },
+        auth: {
+          username: this.apiKey,
+          password: this.apiSecret,
+        },
+      })
+
+      const params: any = {
+        page: options?.page || 0,
+        size: options?.size || 50,
+      }
+
+      if (options?.startDate) params.startDate = options.startDate
+      if (options?.endDate) params.endDate = options.endDate
+      if (options?.claimItemStatus) params.claimItemStatus = options.claimItemStatus
+      if (options?.orderNumber) params.orderNumber = options.orderNumber
+      if (options?.claimIds && options.claimIds.length > 0) params.claimIds = options.claimIds
+
+      const response = await integrationClient.get(
+        `/sellers/${this.supplierId}/claims`,
+        { params }
+      )
+
+      return response.data
+    } catch (error: any) {
+      console.error('Trendyol getClaims Error:', error.response?.data || error.message)
+      throw new Error(`Trendyol API Error: ${error.response?.data?.message || error.message}`)
+    }
+  }
+
+  /**
+   * Create a new return claim
+   * @param data - Claim creation data
+   */
+  async createClaim(data: {
+    orderNumber: string
+    claimItems: Array<{
+      barcode: string
+      quantity: number
+      reasonId?: number
+      customerNote?: string
+    }>
+    customerId?: number
+    excludeListing?: boolean
+    forcePackageCreation?: boolean
+    shipmentCompanyId?: number
+  }): Promise<any> {
+    try {
+      const integrationClient = axios.create({
+        baseURL: 'https://apigw.trendyol.com/integration/order',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': `${this.supplierId} - ExvadoSales`,
+        },
+        auth: {
+          username: this.apiKey,
+          password: this.apiSecret,
+        },
+      })
+
+      // Set default reasonId (401 = "Vazgeçtim") if not provided
+      const claimItems = data.claimItems.map(item => ({
+        ...item,
+        reasonId: item.reasonId || 401
+      }))
+
+      const payload = {
+        ...data,
+        claimItems
+      }
+
+      console.log('📤 Trendyol createClaim request:', JSON.stringify(payload, null, 2))
+
+      const response = await integrationClient.post(
+        `/sellers/${this.supplierId}/claims/create`,
+        payload
+      )
+
+      console.log('✅ İade talebi oluşturuldu:', response.data)
+      return response.data
+    } catch (error: any) {
+      console.error('Trendyol createClaim Error:', error.response?.data || error.message)
+      throw new Error(`Trendyol API Error: ${error.response?.data?.message || error.message}`)
+    }
+  }
+
+  /**
+   * Approve claim line items
+   * @param claimId - Claim ID
+   * @param claimLineItemIdList - Array of claim line item IDs to approve
+   */
+  async approveClaimLineItems(claimId: string, claimLineItemIdList: string[]): Promise<void> {
+    try {
+      const integrationClient = axios.create({
+        baseURL: 'https://apigw.trendyol.com/integration/order',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': `${this.supplierId} - ExvadoSales`,
+        },
+        auth: {
+          username: this.apiKey,
+          password: this.apiSecret,
+        },
+      })
+
+      const payload = {
+        claimLineItemIdList
+      }
+
+      console.log('📤 Trendyol approveClaimLineItems:', claimId, claimLineItemIdList)
+
+      const response = await integrationClient.put(
+        `/sellers/${this.supplierId}/claims/${claimId}/items/approve`,
+        payload
+      )
+
+      console.log('✅ İade talebi onaylandı:', response.data)
+    } catch (error: any) {
+      console.error('Trendyol approveClaimLineItems Error:', error.response?.data || error.message)
+      throw new Error(`Trendyol API Error: ${error.response?.data?.message || error.message}`)
+    }
+  }
+
+  /**
+   * Create claim issue (reject claim)
+   * @param claimId - Claim ID
+   * @param data - Rejection data
+   */
+  async createClaimIssue(
+    claimId: string,
+    data: {
+      claimIssueReasonId: number
+      claimItemIdList: string
+      description: string
+      files?: File[] | Buffer[]
+    }
+  ): Promise<void> {
+    try {
+      const FormData = require('form-data')
+      const formData = new FormData()
+
+      formData.append('claimIssueReasonId', data.claimIssueReasonId.toString())
+      formData.append('claimItemIdList', data.claimItemIdList)
+      formData.append('description', data.description)
+
+      if (data.files && data.files.length > 0) {
+        for (const file of data.files) {
+          formData.append('files', file)
+        }
+      }
+
+      const integrationClient = axios.create({
+        baseURL: 'https://apigw.trendyol.com/integration/order',
+        headers: {
+          ...formData.getHeaders(),
+          'User-Agent': `${this.supplierId} - ExvadoSales`,
+        },
+        auth: {
+          username: this.apiKey,
+          password: this.apiSecret,
+        },
+      })
+
+      console.log('📤 Trendyol createClaimIssue:', claimId, data)
+
+      const response = await integrationClient.post(
+        `/sellers/${this.supplierId}/claims/${claimId}/issue`,
+        formData
+      )
+
+      console.log('✅ İade talebi reddedildi:', response.data)
+    } catch (error: any) {
+      console.error('Trendyol createClaimIssue Error:', error.response?.data || error.message)
+      throw new Error(`Trendyol API Error: ${error.response?.data?.message || error.message}`)
+    }
+  }
+
+  /**
+   * Get claim issue reasons (red sebepleri)
+   */
+  async getClaimIssueReasons(): Promise<Array<{ id: number; name: string }>> {
+    try {
+      const integrationClient = axios.create({
+        baseURL: 'https://apigw.trendyol.com/integration/order',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': `${this.supplierId} - ExvadoSales`,
+        },
+        auth: {
+          username: this.apiKey,
+          password: this.apiSecret,
+        },
+      })
+
+      const response = await integrationClient.get('/claim-issue-reasons')
+
+      return response.data
+    } catch (error: any) {
+      console.error('Trendyol getClaimIssueReasons Error:', error.response?.data || error.message)
+      throw new Error(`Trendyol API Error: ${error.response?.data?.message || error.message}`)
+    }
+  }
+
+  /**
+   * Get claim item audit history
+   * @param claimItemsId - Claim item ID
+   */
+  async getClaimItemAudits(claimItemsId: string): Promise<any[]> {
+    try {
+      const integrationClient = axios.create({
+        baseURL: 'https://apigw.trendyol.com/integration/order',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': `${this.supplierId} - ExvadoSales`,
+        },
+        auth: {
+          username: this.apiKey,
+          password: this.apiSecret,
+        },
+      })
+
+      const response = await integrationClient.get(
+        `/sellers/${this.supplierId}/claims/items/${claimItemsId}/audit`
+      )
+
+      return response.data
+    } catch (error: any) {
+      console.error('Trendyol getClaimItemAudits Error:', error.response?.data || error.message)
+      throw new Error(`Trendyol API Error: ${error.response?.data?.message || error.message}`)
+    }
+  }
 }
 
 // Singleton instance

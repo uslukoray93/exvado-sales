@@ -333,23 +333,25 @@ async function syncOrder(order: any) {
   // Get cargo company (REST API has cargoProviderName directly)
   const cargoCompany = mapN11CargoCompanyName(order.cargoProviderName)
 
-  // AUTO-COMPLETE: 7+ günlük SHIPPED siparişleri otomatik DELIVERED yap
-  // (N11 API bazen teslim edilen siparişleri güncellemez)
-  if (mappedStatus === OrderStatus.SHIPPED) {
-    // REST API uses lastModifiedDate (timestamp)
-    const orderDate = new Date(order.lastModifiedDate)
-    const daysSinceOrder = Math.floor((Date.now() - orderDate.getTime()) / (1000 * 60 * 60 * 24))
-
-    if (daysSinceOrder >= 7) {
-      console.log(`📦 Sipariş ${daysSinceOrder} gün önce kargoya verildi, otomatik DELIVERED yapılıyor`)
-      mappedStatus = OrderStatus.SHIPPED
-    }
-  }
-
-  // AUTO-COMPLETE: 7+ günlük DELIVERED siparişleri otomatik COMPLETED yap
+  // Calculate order age once
   const orderDate = new Date(order.lastModifiedDate)
   const daysSinceOrder = Math.floor((Date.now() - orderDate.getTime()) / (1000 * 60 * 60 * 24))
 
+  // AUTO-COMPLETE: 14+ günlük PROCESSING siparişleri otomatik COMPLETED yap
+  // (N11 API eski siparişleri döndürmediği için bu siparişler takılı kalıyor)
+  if (mappedStatus === OrderStatus.PROCESSING && daysSinceOrder >= 14) {
+    console.log(`📦 Sipariş ${daysSinceOrder} gün önce hazırlanıyordu, otomatik COMPLETED yapılıyor (N11 API artık güncellemez)`)
+    mappedStatus = OrderStatus.COMPLETED
+  }
+
+  // AUTO-COMPLETE: 7+ günlük SHIPPED siparişleri otomatik DELIVERED yap
+  // (N11 API bazen teslim edilen siparişleri güncellemez)
+  if (mappedStatus === OrderStatus.SHIPPED && daysSinceOrder >= 7) {
+    console.log(`📦 Sipariş ${daysSinceOrder} gün önce kargoya verildi, otomatik DELIVERED yapılıyor`)
+    mappedStatus = OrderStatus.DELIVERED
+  }
+
+  // AUTO-COMPLETE: 7+ günlük DELIVERED siparişleri otomatik COMPLETED yap
   let finalStatus = mappedStatus
   if (mappedStatus === OrderStatus.DELIVERED && daysSinceOrder >= 7) {
     console.log(`📦 Sipariş ${daysSinceOrder} gün önce teslim edildi, otomatik COMPLETED yapılıyor`)

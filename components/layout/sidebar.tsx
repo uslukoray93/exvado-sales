@@ -85,7 +85,8 @@ import {
   Award,
   Plug,
   ClipboardList,
-  Sparkles
+  Sparkles,
+  Undo2
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
@@ -99,6 +100,7 @@ const menuItems = [
     items: [
       { icon: ShoppingCart, label: "Sipariş Listesi", href: "/orders", badge: null },
       { icon: Mail, label: "Sipariş Soruları", href: "/order-questions", badge: null },
+      { icon: Undo2, label: "İade Talepleri", href: "/return-requests", badge: null },
     ]
   },
   {
@@ -108,6 +110,14 @@ const menuItems = [
       { icon: TrendingDown, label: "Ürün Raporları", href: "/product-reports", badge: null },
       { icon: TrendingUp, label: "Büyüme Raporları", href: "/growth-reports", badge: null },
       { icon: Merge, label: "Ürün Karşılaştırma", href: "/product-comparison", badge: "new" },
+    ]
+  },
+  {
+    title: "Operasyon Maliyetleri",
+    items: [
+      { icon: Calculator, label: "Maliyet Analizi", href: "/operation-costs", badge: null },
+      { icon: Package, label: "Desi Hesaplamaları", href: "/desi-calculator", badge: null },
+      { icon: List, label: "Kargo Fiyat Listesi", href: "/cargo-prices", badge: null },
     ]
   },
   {
@@ -136,8 +146,9 @@ export function Sidebar() {
   // Determine which section should be open based on current pathname
   const getInitialOpenSections = () => {
     const sections: { [key: string]: boolean } = {
-      "Sipariş Yönetimi": ["/orders", "/order-questions"].some(path => pathname.startsWith(path)),
+      "Sipariş Yönetimi": ["/orders", "/order-questions", "/return-requests"].some(path => pathname.startsWith(path)),
       "Raporlar": ["/sales-reports", "/product-reports", "/growth-reports", "/product-comparison"].some(path => pathname.startsWith(path)),
+      "Operasyon Maliyetleri": ["/operation-costs", "/desi-calculator", "/cargo-prices"].some(path => pathname.startsWith(path)),
       "Ayarlar": ["/settings", "/email-settings", "/activity-logs"].some(path => pathname.startsWith(path)),
       "GİRİŞ EKRANLARI": ["/login", "/password-reset", "/register", "/verification"].some(path => pathname.startsWith(path)),
     }

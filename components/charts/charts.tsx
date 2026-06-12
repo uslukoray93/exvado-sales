@@ -24,48 +24,54 @@ const data = [
 
 export function LineChart() {
   return (
-    <ResponsiveContainer width="100%" height={350}>
-      <RechartsLineChart data={data}>
-        <CartesianGrid strokeDasharray="3 3" />
-        <XAxis dataKey="name" />
-        <YAxis />
-        <Tooltip />
-        <Legend />
-        <Line type="monotone" dataKey="ziyaretçi" stroke="#8884d8" />
-        <Line type="monotone" dataKey="satış" stroke="#82ca9d" />
-      </RechartsLineChart>
-    </ResponsiveContainer>
+    <div style={{ width: '100%', minHeight: '350px' }}>
+      <ResponsiveContainer width="100%" height={350} minHeight={350}>
+        <RechartsLineChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey="name" />
+          <YAxis />
+          <Tooltip />
+          <Legend />
+          <Line type="monotone" dataKey="ziyaretçi" stroke="#8884d8" />
+          <Line type="monotone" dataKey="satış" stroke="#82ca9d" />
+        </RechartsLineChart>
+      </ResponsiveContainer>
+    </div>
   )
 }
 
 export function BarChart() {
   return (
-    <ResponsiveContainer width="100%" height={350}>
-      <RechartsBarChart data={data}>
-        <CartesianGrid strokeDasharray="3 3" />
-        <XAxis dataKey="name" />
-        <YAxis />
-        <Tooltip />
-        <Legend />
-        <Bar dataKey="satış" fill="#8884d8" />
-        <Bar dataKey="gelir" fill="#82ca9d" />
-      </RechartsBarChart>
-    </ResponsiveContainer>
+    <div style={{ width: '100%', minHeight: '350px' }}>
+      <ResponsiveContainer width="100%" height={350} minHeight={350}>
+        <RechartsBarChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey="name" />
+          <YAxis />
+          <Tooltip />
+          <Legend />
+          <Bar dataKey="satış" fill="#8884d8" />
+          <Bar dataKey="gelir" fill="#82ca9d" />
+        </RechartsBarChart>
+      </ResponsiveContainer>
+    </div>
   )
 }
 
 export function AreaChart() {
   return (
-    <ResponsiveContainer width="100%" height={350}>
-      <RechartsAreaChart data={data}>
-        <CartesianGrid strokeDasharray="3 3" />
-        <XAxis dataKey="name" />
-        <YAxis />
-        <Tooltip />
-        <Legend />
-        <Area type="monotone" dataKey="gelir" stackId="1" stroke="#8884d8" fill="#8884d8" />
-        <Area type="monotone" dataKey="satış" stackId="1" stroke="#82ca9d" fill="#82ca9d" />
-      </RechartsAreaChart>
-    </ResponsiveContainer>
+    <div style={{ width: '100%', minHeight: '350px' }}>
+      <ResponsiveContainer width="100%" height={350} minHeight={350}>
+        <RechartsAreaChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey="name" />
+          <YAxis />
+          <Tooltip />
+          <Legend />
+          <Area type="monotone" dataKey="gelir" stackId="1" stroke="#8884d8" fill="#8884d8" />
+          <Area type="monotone" dataKey="satış" stackId="1" stroke="#82ca9d" fill="#82ca9d" />
+        </RechartsAreaChart>
+      </ResponsiveContainer>
+    </div>
   )
 }
