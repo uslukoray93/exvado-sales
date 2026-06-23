@@ -29,6 +29,7 @@ export interface BolbolbulOrder {
   cargoCompany?: string
   paymentType?: number
   paymentMethod?: string
+  installmentCount?: number
 }
 
 export interface BolbolbulOrdersResponse {
@@ -182,7 +183,39 @@ class BolbolbulAPIClient {
         console.log(`  ${status} → ${count} orders`)
       })
 
-      const ordersWithItems: BolbolbulOrder[] = ticimaxOrders
+      // Fetch payment details for each order to get installment info
+      console.log(`🔍 DEBUG: Fetching payment info for ${ticimaxOrders.length} orders...`)
+      const ordersWithPaymentInfo = await Promise.all(
+        ticimaxOrders.map(async (order) => {
+          try {
+            console.log(`📞 Calling SelectSiparisOdeme for order ID=${order.ID}, SiparisNo=${order.SiparisNo}`)
+            const payments = await this.ticimaxClient.selectSiparisOdeme(order.ID)
+            console.log(`📥 Received ${payments.length} total payment record(s) from API`)
+
+            // IMPORTANT: SelectSiparisOdeme returns ALL payments, not just for this order!
+            // We must filter by SiparisID to find the payment for THIS specific order
+            const payment = payments.find(p => p.SiparisID === order.ID)
+
+            if (payment) {
+              console.log(`💳 Order ${order.SiparisNo}: OdemeTipi=${payment.OdemeTipi}, TaksitSayisi=${payment.TaksitSayisi}, Tutar=${payment.Tutar}`)
+              return {
+                ...order,
+                OdemeTipi: payment.OdemeTipi,
+                TaksitSayisi: payment.TaksitSayisi,
+              }
+            }
+
+            console.log(`⚠️ No payment found for order ${order.SiparisNo} (ID=${order.ID})`)
+            return order
+          } catch (error) {
+            console.error(`❌ Failed to fetch payment for order ${order.SiparisNo}:`, error)
+            return order
+          }
+        })
+      )
+      console.log(`✅ DEBUG: Finished fetching payment info`)
+
+      const ordersWithItems: BolbolbulOrder[] = ordersWithPaymentInfo
         .filter((order) => {
           // Bakiye > 0 ise ödeme bekliyor, atla
           // Bakiye < 0 veya = 0 ise ödeme yapılmış demektir
@@ -197,6 +230,14 @@ class BolbolbulAPIClient {
 
           const mappedStatus = this.mapTicimaxStatus(order.SiparisDurumID, order.SiparisDurum)
 
+          // Payment type mapping
+          const paymentTypeNames: Record<number, string> = {
+            0: 'Kredi Kartı',
+            1: 'Havale/EFT',
+            2: 'Kapıda Ödeme Nakit',
+            3: 'Kapıda Ödeme Kredi Kartı',
+          }
+
           return {
             orderId: order.ID.toString(),
           orderNumber: order.SiparisNo,
@@ -208,10 +249,10 @@ class BolbolbulAPIClient {
             phone: order.UyeTelefon || '',
             address: `${order.AdresBaslik ? order.AdresBaslik + ' - ' : ''}${order.Adres}`,
           },
-          products: (order.Urunler || []).map((item) => {
+          products: (order.Urunler || []).map((item: any) => {
             // SiparisToplamTutari zaten KDV + Kargo dahil toplam tutar
             // Bu tutarı ürün adedine bölerek birim fiyat hesaplıyoruz
-            const totalQuantity = (order.Urunler || []).reduce((sum, u) => sum + u.Adet, 0)
+            const totalQuantity = (order.Urunler || []).reduce((sum: number, u: any) => sum + u.Adet, 0)
             const pricePerUnit = order.SiparisToplamTutari / totalQuantity
 
             return {
@@ -228,7 +269,8 @@ class BolbolbulAPIClient {
           trackingNumber: order.KargoTakipNo,
           cargoCompany: order.KargoFirmaAdi,
           paymentType: order.OdemeTipi,
-          paymentMethod: order.OdemeTipiAdi,
+          paymentMethod: order.OdemeTipi !== undefined ? paymentTypeNames[order.OdemeTipi] : undefined,
+          installmentCount: order.TaksitSayisi,
         }
       })
 

@@ -107,6 +107,7 @@ export async function GET(request: NextRequest) {
         orderTotal: order.orderTotal,  // Ticimax ToplamTutar: KDV dahil toplam sipariş tutarı (Bolbolbul için)
         commissionRate: order.commissionRate,
         shippingCost: order.shippingCost,
+        desi: order.desi,
         orderDate: order.orderDate.toISOString(),
         agreedDeliveryDate: order.agreedDeliveryDate?.toISOString(),
         estimatedProfit,
@@ -115,6 +116,9 @@ export async function GET(request: NextRequest) {
         invoiceUrl: order.invoiceUrl,
         notes: order.notes,
         cargoCompany: order.cargoCompany,
+        paymentType: order.paymentType,  // Ödeme tipi (Bolbolbul için)
+        paymentMethod: order.paymentMethod,  // Ödeme yöntemi adı (Bolbolbul için)
+        installmentCount: order.installmentCount,  // Taksit sayısı (Bolbolbul için)
       }
     })
 
@@ -148,7 +152,7 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
-    const { orderId, status, commissionRate, shippingCost, trackingNumber, notes, cargoCompany } = body
+    const { orderId, status, commissionRate, shippingCost, desi, trackingNumber, notes, cargoCompany } = body
 
     console.log('📥 PATCH /api/orders/list - Request body:', body)
 
@@ -169,6 +173,7 @@ export async function PATCH(request: NextRequest) {
     }
     if (commissionRate !== undefined) updateData.commissionRate = commissionRate
     if (shippingCost !== undefined) updateData.shippingCost = shippingCost
+    if (desi !== undefined) updateData.desi = desi
     if (trackingNumber !== undefined) updateData.trackingNumber = trackingNumber
     if (notes !== undefined) updateData.notes = notes
     if (cargoCompany !== undefined) updateData.cargoCompany = cargoCompany

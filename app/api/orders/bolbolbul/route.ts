@@ -89,6 +89,9 @@ export async function GET(request: NextRequest) {
                 orderTotal: order.total,  // Ticimax ToplamTutar: KDV dahil toplam sipariş tutarı
                 trackingNumber: order.trackingNumber || undefined,
                 cargoCompany: order.cargoCompany || undefined,
+                paymentType: order.paymentType,
+                paymentMethod: order.paymentMethod,
+                installmentCount: order.installmentCount,
                 // Update items: delete old ones and create new ones
                 items: {
                   deleteMany: {}, // Delete all existing items
@@ -123,6 +126,7 @@ export async function GET(request: NextRequest) {
                 cargoCompany: order.cargoCompany || undefined,
                 paymentType: order.paymentType,
                 paymentMethod: order.paymentMethod,
+                installmentCount: order.installmentCount,
                 commissionRate: 0, // Bolbolbul is own website, no commission
                 shippingCost: 0, // Will be calculated from order total
                 items: {

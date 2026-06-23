@@ -28,6 +28,7 @@ export interface TicimaxSiparis {
   KargoFirmaAdi?: string
   OdemeTipi?: number // 0=Kredi Kartı, 1=Havale, etc.
   OdemeTipiAdi?: string
+  TaksitSayisi?: number // Taksit sayısı (kredi kartı ödemelerinde)
   OdemeDurumu?: number // 0=Onay bekliyor, 1=Onaylandı, etc.
   Bakiye?: number // Kalan borç (> 0 ise ödeme bekliyor)
   Urunler?: TicimaxSiparisUrun[] // Products are included when UrunGetir=true
@@ -70,6 +71,8 @@ export interface TicimaxSiparisOdeme {
   OdemeDurumu: number // 0=Onay bekliyor, 1=Onaylandı, 2=Hatalı, 3=İade edilmiş, 4=İptal edilmiş
   Tutar: number
   Tarih: string
+  TaksitSayisi?: number // Taksit sayısı (kredi kartı ödemelerinde)
+  BankaKomisyonu?: number // Banka komisyon oranı
 }
 
 export interface TicimaxSelectSiparisOdemeResponse {
@@ -320,6 +323,7 @@ class TicimaxSOAPClient {
 
       const odemeTipi = order._paymentType !== undefined ? order._paymentType : undefined
       const odemeTipiAdi = odemeTipi !== undefined ? paymentTypeNames[odemeTipi] : undefined
+      const taksitSayisi = order['a:TaksitSayisi'] ? parseInt(order['a:TaksitSayisi']) : undefined
 
       const durumID = parseInt(order['a:Durum']) || 0
       const durumName = this.getDurumName(durumID)
@@ -346,6 +350,7 @@ class TicimaxSOAPClient {
         KargoFirmaAdi: order['a:KargoFirmaTanim'] || undefined,
         OdemeTipi: odemeTipi,
         OdemeTipiAdi: odemeTipiAdi,
+        TaksitSayisi: taksitSayisi,
         OdemeDurumu: odemeDurumu,
         Bakiye: parseFloat(order['a:Bakiye']) || 0,
         Urunler: products,
@@ -462,6 +467,8 @@ class TicimaxSOAPClient {
         OdemeDurumu: parseInt(payment['a:OdemeDurumu']) || 0,
         Tutar: parseFloat(payment['a:Tutar']) || 0,
         Tarih: payment['a:Tarih'] || '',
+        TaksitSayisi: payment['a:TaksitSayisi'] ? parseInt(payment['a:TaksitSayisi']) : undefined,
+        BankaKomisyonu: payment['a:BankaKomisyonu'] ? parseFloat(payment['a:BankaKomisyonu']) : undefined,
       }))
     } catch (error: any) {
       console.error(`❌ Ticimax SelectSiparisOdeme error for order ${orderId}:`, error.message)

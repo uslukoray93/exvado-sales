@@ -105,8 +105,10 @@ type Order = {
   status: OrderStatus
   ticimaxStatus?: string | null  // Ticimax orijinal durum adı (Bolbolbul için)
   orderTotal?: number | null     // Ticimax ToplamTutar: KDV dahil toplam sipariş tutarı (Bolbolbul için)
+  installmentCount?: number | null  // Taksit sayısı (Bolbolbul için: -1=Havale/EFT, 0=Tek Çekim, 2-12=Taksit)
   commissionRate: number | null  // Komisyon oranı (%)
   shippingCost: number           // Kargo maliyeti
+  desi: number | null            // Desi/Kg
   orderDate: string
   agreedDeliveryDate?: string    // Teslimat tarihi
   estimatedProfit?: number       // Tahmini kar
@@ -151,6 +153,7 @@ const SAMPLE_ORDERS: Order[] = [
     status: "pending",
     commissionRate: null,
     shippingCost: 25,
+    desi: null,
     orderDate: "2026-02-27 14:30",
   },
   {
@@ -182,6 +185,7 @@ const SAMPLE_ORDERS: Order[] = [
     status: "processing",
     commissionRate: 12,
     shippingCost: 35,
+    desi: null,
     orderDate: "2026-02-27 13:15",
   },
   {
@@ -205,6 +209,7 @@ const SAMPLE_ORDERS: Order[] = [
     status: "approved",
     commissionRate: 15,
     shippingCost: 30,
+    desi: null,
     orderDate: "2026-02-27 11:45",
   },
   {
@@ -226,8 +231,10 @@ const SAMPLE_ORDERS: Order[] = [
       }
     ],
     status: "shipped",
+    installmentCount: 6,  // 6 taksit
     commissionRate: 10,
     shippingCost: 20,
+    desi: null,
     orderDate: "2026-02-26 16:20",
     trackingNumber: "987654321TR",
   },
@@ -252,6 +259,7 @@ const SAMPLE_ORDERS: Order[] = [
     status: "delivered",
     commissionRate: 14,
     shippingCost: 40,
+    desi: null,
     orderDate: "2026-02-25 10:30",
     trackingNumber: "456789123TR",
     invoiceUrl: "invoice-ORD-2026-005.pdf",
@@ -277,6 +285,7 @@ const SAMPLE_ORDERS: Order[] = [
     status: "pending",
     commissionRate: 12,
     shippingCost: 25,
+    desi: null,
     orderDate: "2026-02-26 09:15", // 24+ saat önce
   },
 ]
@@ -377,6 +386,51 @@ export default function OrdersPage() {
   const [invoiceNumber, setInvoiceNumber] = useState<string>("")
   const [invoiceDate, setInvoiceDate] = useState<string>("")
   const [uploadingInvoice, setUploadingInvoice] = useState(false)
+  const [installmentCommissions, setInstallmentCommissions] = useState<{ [key: number]: number }>({})
+  const [cargoPrices, setCargoPrices] = useState<{ [key: number]: number }>({}) // KDV dahil fiyatlar
+  const [desiValues, setDesiValues] = useState<{ [key: string]: number | null }>({})
+
+  // Debounce timer for auto-save
+  const desiTimerRef = useRef<{ [key: string]: NodeJS.Timeout }>({})
+
+  // Fetch cargo prices from API
+  const fetchCargoPrices = async () => {
+    try {
+      const response = await fetch('/api/cargo-prices')
+      const data = await response.json()
+
+      if (data.success && data.data) {
+        // Convert array to object: { desi: priceWithVAT }
+        const pricesMap: { [key: number]: number } = {}
+        data.data.forEach((item: any) => {
+          // KDV dahil fiyat (surat * 1.20)
+          pricesMap[item.desi] = item.surat * 1.20
+        })
+        setCargoPrices(pricesMap)
+      }
+    } catch (error) {
+      console.error('Failed to fetch cargo prices:', error)
+    }
+  }
+
+  // Fetch installment commissions from API
+  const fetchInstallmentCommissions = async () => {
+    try {
+      const response = await fetch('/api/installment-commissions')
+      const data = await response.json()
+
+      if (data.success && data.data) {
+        // Convert array to object: { installmentCount: commissionRate }
+        const commissionsMap: { [key: number]: number } = {}
+        data.data.forEach((item: any) => {
+          commissionsMap[item.installmentCount] = item.commissionRate
+        })
+        setInstallmentCommissions(commissionsMap)
+      }
+    } catch (error) {
+      console.error('Failed to fetch installment commissions:', error)
+    }
+  }
 
   // Fetch orders from API
   const fetchOrders = async () => {
@@ -421,6 +475,8 @@ export default function OrdersPage() {
   // Fetch orders on mount and set up auto-sync
   useEffect(() => {
     fetchOrders()
+    fetchInstallmentCommissions()
+    fetchCargoPrices()
 
     // Auto-sync every 10 minutes
     const syncInterval = setInterval(() => {
@@ -437,6 +493,15 @@ export default function OrdersPage() {
     }, 60000) // Update every minute
 
     return () => clearInterval(timer)
+  }, [])
+
+  // Cleanup desi timers on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(desiTimerRef.current).forEach(timer => {
+        if (timer) clearTimeout(timer)
+      })
+    }
   }, [])
 
   // Format date for display
@@ -496,8 +561,20 @@ export default function OrdersPage() {
   }
 
   // Calculate profit and commission
-  const calculateOrderFinancials = (order: Order, commissionRate?: number | null) => {
-    const rate = commissionRate !== undefined ? commissionRate : order.commissionRate
+  const calculateOrderFinancials = (order: Order, commissionRate?: number | null, desi?: number | null) => {
+    // Determine commission rate
+    let rate = commissionRate !== undefined ? commissionRate : order.commissionRate
+
+    // For Bolbolbul orders: if no commission rate set, try to get it from installment commissions
+    if (!rate && order.platform.toLowerCase() === 'bolbolbul' && order.installmentCount !== null && order.installmentCount !== undefined) {
+      rate = installmentCommissions[order.installmentCount] || null
+    }
+
+    // Calculate shipping cost based on desi
+    const currentDesi = desi !== undefined ? desi : order.desi
+    const shippingCost = (currentDesi !== null && cargoPrices[currentDesi])
+      ? cargoPrices[currentDesi]
+      : order.shippingCost
 
     // Total sale amount
     // Bolbolbul için orderTotal varsa onu kullan (KDV dahil toplam tutar)
@@ -513,9 +590,9 @@ export default function OrdersPage() {
     const commissionAmount = rate ? (totalSale * rate) / 100 : 0
 
     // Estimated profit
-    const estimatedProfit = totalSale - totalPurchase - commissionAmount - order.shippingCost
+    const estimatedProfit = totalSale - totalPurchase - commissionAmount - shippingCost
 
-    return { totalSale, totalPurchase, commissionAmount, estimatedProfit }
+    return { totalSale, totalPurchase, commissionAmount, estimatedProfit, shippingCost }
   }
 
   // Toggle order expansion
@@ -550,6 +627,29 @@ export default function OrdersPage() {
       }
     } catch (error) {
       console.error('Failed to update commission rate:', error)
+    }
+  }
+
+  // Update desi
+  const updateDesi = async (orderId: string, desi: number | null) => {
+    try {
+      // Calculate shipping cost from desi
+      const shippingCost = (desi !== null && cargoPrices[desi]) ? cargoPrices[desi] : 0
+
+      const response = await fetch('/api/orders/list', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId,
+          desi: desi,
+          shippingCost: shippingCost
+        })
+      })
+      if (response.ok) {
+        await fetchOrders()
+      }
+    } catch (error) {
+      console.error('Failed to update desi:', error)
     }
   }
 
@@ -1161,7 +1261,12 @@ export default function OrdersPage() {
                   <TableBody>
                     {filteredOrders.map((order) => {
                       const isExpanded = expandedOrders.has(order.id)
-                      const financials = calculateOrderFinancials(order)
+                      const currentDesi = desiValues[order.id] !== undefined ? desiValues[order.id] : order.desi
+                      const financials = calculateOrderFinancials(
+                        order,
+                        editingCommission[order.id] !== undefined ? editingCommission[order.id] : order.commissionRate,
+                        currentDesi
+                      )
 
                       return (
                         <React.Fragment key={order.id}>
@@ -1387,8 +1492,15 @@ export default function OrdersPage() {
                                 getStatusBadge(order.status)
                               )}
                             </TableCell>
-                            <TableCell className="text-xs text-right font-semibold text-gray-900 dark:text-gray-100 py-2 h-12 w-[100px] whitespace-nowrap">
-                              {financials.totalSale.toFixed(2)} ₺
+                            <TableCell className="text-xs text-right font-semibold text-gray-900 dark:text-gray-100 py-2 h-12 w-[100px]">
+                              <div className="flex flex-col items-end gap-0.5">
+                                <span className="whitespace-nowrap">{financials.totalSale.toFixed(2)} ₺</span>
+                                {order.platform.toLowerCase() === 'bolbolbul' && order.installmentCount !== null && order.installmentCount !== undefined && (
+                                  <span className="text-[9px] text-blue-600 dark:text-blue-400 font-medium whitespace-nowrap">
+                                    {order.installmentCount === -1 ? 'Havale/EFT' : order.installmentCount === 0 ? 'Tek Çekim' : `${order.installmentCount} Taksit`}
+                                  </span>
+                                )}
+                              </div>
                             </TableCell>
                             <TableCell className="text-xs text-right font-bold py-2 h-12 w-[100px] whitespace-nowrap">
                               <span className={financials.estimatedProfit >= 0 ? "text-green-600 dark:text-green-500" : "text-red-600 dark:text-red-500"}>
@@ -1479,37 +1591,93 @@ export default function OrdersPage() {
                                     </div>
 
                                     <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
-                                      <Label className="text-xs text-gray-500 mb-1 block">Kargo Maliyeti (₺)</Label>
-                                      <div className="flex items-center gap-2">
+                                      <Label className="text-xs text-gray-500 mb-1 block">
+                                        Desi/Kg
+                                        {(() => {
+                                          const currentDesi = desiValues[order.id] !== undefined ? desiValues[order.id] : order.desi
+                                          return currentDesi !== null && cargoPrices[currentDesi] && (
+                                            <span className="ml-1 text-blue-600 dark:text-blue-400 font-medium">
+                                              ({cargoPrices[currentDesi].toFixed(2)} ₺)
+                                            </span>
+                                          )
+                                        })()}
+                                      </Label>
+                                      <div className="flex gap-1">
                                         <Input
                                           type="number"
-                                          placeholder="0"
-                                          value={editingShipping[order.id] !== undefined ? editingShipping[order.id] || "" : order.shippingCost || ""}
-                                          onChange={(e) => setEditingShipping({
-                                            ...editingShipping,
-                                            [order.id]: e.target.value ? parseFloat(e.target.value) : null
-                                          })}
-                                          className="h-7 text-xs"
+                                          placeholder="Desi"
+                                          value={desiValues[order.id] !== undefined ? (desiValues[order.id] || "") : (order.desi || "")}
+                                          onChange={(e) => {
+                                            const desi = e.target.value ? parseInt(e.target.value) : null
+                                            setDesiValues(prev => ({ ...prev, [order.id]: desi }))
+
+                                            // Önceki timer'ı temizle
+                                            if (desiTimerRef.current[order.id]) {
+                                              clearTimeout(desiTimerRef.current[order.id])
+                                            }
+
+                                            // Yeni timer başlat - 1 saniye sonra otomatik kaydet
+                                            desiTimerRef.current[order.id] = setTimeout(async () => {
+                                              console.log('🔄 Desi otomatik kaydediliyor:', order.id, desi)
+                                              await updateDesi(order.id, desi)
+                                              setDesiValues(prev => {
+                                                const newState = { ...prev }
+                                                delete newState[order.id]
+                                                return newState
+                                              })
+                                              delete desiTimerRef.current[order.id]
+                                            }, 1000)
+                                          }}
+                                          className="h-7 text-xs flex-1"
                                         />
-                                        {editingShipping[order.id] !== undefined && (
+                                        {desiValues[order.id] !== undefined && (
                                           <Button
-                                            size="icon"
-                                            className="h-7 w-7"
-                                            onClick={() => updateShippingCost(order.id, editingShipping[order.id])}
+                                            size="sm"
+                                            variant="ghost"
+                                            className="h-7 px-2"
+                                            onClick={async () => {
+                                              // Timer'ı iptal et
+                                              if (desiTimerRef.current[order.id]) {
+                                                clearTimeout(desiTimerRef.current[order.id])
+                                                delete desiTimerRef.current[order.id]
+                                              }
+                                              // Hemen kaydet
+                                              console.log('💾 Desi manuel kaydediliyor:', order.id, desiValues[order.id])
+                                              await updateDesi(order.id, desiValues[order.id])
+                                              setDesiValues(prev => {
+                                                const newState = { ...prev }
+                                                delete newState[order.id]
+                                                return newState
+                                              })
+                                            }}
                                           >
-                                            <Save className="h-3 w-3" />
+                                            ✓
                                           </Button>
                                         )}
                                       </div>
                                     </div>
 
                                     <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
-                                      <Label className="text-xs text-gray-500 mb-1 block">Komisyon Oranı (%)</Label>
+                                      <Label className="text-xs text-gray-500 mb-1 block">
+                                        Komisyon Oranı (%)
+                                        {order.platform.toLowerCase() === 'bolbolbul' && order.installmentCount !== null && order.installmentCount !== undefined && installmentCommissions[order.installmentCount] !== undefined && (
+                                          <span className="ml-1 text-blue-600 dark:text-blue-400 font-medium">
+                                            (Auto: {installmentCommissions[order.installmentCount]}%)
+                                          </span>
+                                        )}
+                                      </Label>
                                       <div className="flex items-center gap-2">
                                         <Input
                                           type="number"
                                           placeholder="0"
-                                          value={editingCommission[order.id] !== undefined ? editingCommission[order.id] || "" : order.commissionRate || ""}
+                                          value={
+                                            editingCommission[order.id] !== undefined
+                                              ? editingCommission[order.id] || ""
+                                              : order.commissionRate
+                                              || (order.platform.toLowerCase() === 'bolbolbul' && order.installmentCount !== null && order.installmentCount !== undefined && installmentCommissions[order.installmentCount] !== undefined
+                                                ? installmentCommissions[order.installmentCount]
+                                                : "")
+                                          }
                                           onChange={(e) => setEditingCommission({
                                             ...editingCommission,
                                             [order.id]: e.target.value ? parseFloat(e.target.value) : null

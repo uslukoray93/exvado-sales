@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# dev server pid
+.dev-server.pid
+
 # production
 /build
 

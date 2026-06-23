@@ -16,9 +16,9 @@ model Order {
   customerPhone      String
   customerAddress    String
   status             OrderStatus   @default(PENDING)
-  ticimaxStatus      String?       // Ticimax orijinal durum adı (örn: "Sipariş Alındı", "Kargoya verildi")
   commissionRate     Float?
   shippingCost       Float         @default(0)
+  desi               Int?
   orderDate          DateTime
   trackingNumber     String?
   invoiceUrl         String?
@@ -30,9 +30,11 @@ model Order {
   invoiceDate        DateTime?
   invoiceNumber      String?
   invoiceUploaded    Boolean       @default(false)
-  paymentType        Int?          // Ticimax OdemeTipi: 0=Kredi Kartı, 1=Havale, etc.
-  paymentMethod      String?       // Ödeme yöntemi adı
-  orderTotal         Float?        // Ticimax ToplamTutar: KDV dahil toplam sipariş tutarı
+  paymentMethod      String?
+  paymentType        Int?
+  installmentCount   Int?
+  ticimaxStatus      String?
+  orderTotal         Float?
   items              OrderItem[]
   returnClaims       ReturnClaim[]
 
@@ -60,6 +62,122 @@ model OrderItem {
   @@index([sku])
 }
 
+model CargoPrice {
+  id          String   @id @default(cuid())
+  desi        Int      @unique
+  aras        Float
+  dhl         Float
+  kolayGelsin Float
+  ptt         Float?
+  surat       Float
+  tex         Float?
+  yurtici     Float
+  cevaTedarik Float
+  ceva        Float
+  horoz       Float
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([desi])
+}
+
+model CargoPriceSettings {
+  id            String   @id @default(cuid())
+  markupPercent Float    @default(20)
+  updatedAt     DateTime @updatedAt
+  updatedBy     String?
+
+  @@map("cargo_price_settings")
+}
+
+model ReturnClaim {
+  id                  String             @id @default(cuid())
+  claimId             String             @unique
+  orderNumber         String
+  orderId             String?
+  claimDate           DateTime
+  lastModifiedDate    DateTime?
+  customerName        String
+  cargoTrackingNumber String?
+  cargoProviderName   String?
+  status              ReturnClaimStatus  @default(Created)
+  totalRefundAmount   Float              @default(0)
+  refundMethod        String?
+  notes               String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  Order               Order?             @relation(fields: [orderId], references: [id])
+  audits              ReturnClaimAudit[]
+  items               ReturnClaimItem[]
+
+  @@index([claimId])
+  @@index([orderNumber])
+  @@index([status])
+  @@index([claimDate])
+}
+
+model ReturnClaimItem {
+  id              String      @id @default(cuid())
+  claimId         String
+  claimItemId     String      @unique
+  barcode         String
+  productName     String
+  quantity        Int
+  reasonId        Int
+  reasonText      String?
+  status          String?
+  refundAmount    Float       @default(0)
+  purchasePrice   Float       @default(0)
+  customerNote    String?
+  rejectionReason String?
+  imageUrl        String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  claim           ReturnClaim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  @@index([claimId])
+  @@index([barcode])
+  @@index([claimItemId])
+}
+
+model ReturnClaimAudit {
+  id             String      @id @default(cuid())
+  claimId        String
+  claimItemId    String?
+  previousStatus String?
+  newStatus      String
+  executorName   String?
+  executorApp    String?
+  date           DateTime
+  notes          String?
+  createdAt      DateTime    @default(now())
+  claim          ReturnClaim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  @@index([claimId])
+  @@index([date])
+}
+
+model ClaimIssueReason {
+  id          Int      @id
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("claim_issue_reasons")
+}
+
+model InstallmentCommission {
+  id                 String   @id @default(cuid())
+  installmentCount   Int      @unique @map("installment_count") // Taksit sayısı (0 = Tek Çekim, 2-12 = Taksit)
+  commissionRate     Float    @map("commission_rate") // Komisyon oranı (%)
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@map("installment_commissions")
+}
+
 enum OrderStatus {
   PENDING
   APPROVED
@@ -76,116 +194,6 @@ enum Platform {
   N11
   HEPSIBURADA
   BOLBOLBUL
-}
-
-model CargoPrice {
-  id            String   @id @default(cuid())
-  desi          Int      @unique
-  aras          Float
-  dhl           Float
-  kolayGelsin   Float
-  ptt           Float?
-  surat         Float
-  tex           Float?
-  yurtici       Float
-  cevaTedarik   Float
-  ceva          Float
-  horoz         Float
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  @@index([desi])
-}
-
-model CargoPriceSettings {
-  id              String   @id @default(cuid())
-  markupPercent   Float    @default(20) // %20 kar marjı
-  updatedAt       DateTime @updatedAt
-  updatedBy       String?  // Kullanıcı adı
-
-  @@map("cargo_price_settings")
-}
-
-// İade Talepleri (Trendyol Claims API)
-model ReturnClaim {
-  id                  String             @id @default(cuid())
-  claimId             String             @unique // Trendyol Claim ID
-  orderNumber         String // Order reference
-  orderId             String? // Database order ID (optional relation)
-  claimDate           DateTime
-  lastModifiedDate    DateTime?
-  customerName        String
-  cargoTrackingNumber String?
-  cargoProviderName   String?
-  status              ReturnClaimStatus  @default(Created)
-  totalRefundAmount   Float              @default(0)
-  refundMethod        String? // İade yöntemi (ör: "Banka", "Kredi Kartı")
-  notes               String?
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
-  items               ReturnClaimItem[]
-  audits              ReturnClaimAudit[]
-  Order               Order?             @relation(fields: [orderId], references: [id])
-
-  @@index([claimId])
-  @@index([orderNumber])
-  @@index([status])
-  @@index([claimDate])
-}
-
-// İade Talep Ürünleri
-model ReturnClaimItem {
-  id              String          @id @default(cuid())
-  claimId         String // ReturnClaim relation
-  claimItemId     String          @unique // Trendyol Claim Item ID
-  barcode         String
-  productName     String
-  quantity        Int
-  reasonId        Int // İade nedeni ID (Trendyol)
-  reasonText      String? // İade nedeni açıklaması
-  status          String? // Item level status
-  refundAmount    Float           @default(0)
-  purchasePrice   Float           @default(0)
-  customerNote    String?
-  rejectionReason String?
-  imageUrl        String?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  claim           ReturnClaim     @relation(fields: [claimId], references: [id], onDelete: Cascade)
-
-  @@index([claimId])
-  @@index([barcode])
-  @@index([claimItemId])
-}
-
-// İade Geçmişi (Audit Trail)
-model ReturnClaimAudit {
-  id             String      @id @default(cuid())
-  claimId        String // ReturnClaim relation
-  claimItemId    String?
-  previousStatus String?
-  newStatus      String
-  executorName   String?
-  executorApp    String?
-  date           DateTime // Timestamp from Trendyol
-  notes          String?
-  createdAt      DateTime    @default(now())
-  claim          ReturnClaim @relation(fields: [claimId], references: [id], onDelete: Cascade)
-
-  @@index([claimId])
-  @@index([date])
-}
-
-// İade Red Sebepleri (Cache için)
-model ClaimIssueReason {
-  id          Int      @id // Trendyol ID
-  name        String // Turkish name
-  description String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@map("claim_issue_reasons")
 }
 
 enum ReturnClaimStatus {

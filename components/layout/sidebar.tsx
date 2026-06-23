@@ -118,6 +118,7 @@ const menuItems = [
       { icon: Calculator, label: "Maliyet Analizi", href: "/operation-costs", badge: null },
       { icon: Package, label: "Desi Hesaplamaları", href: "/desi-calculator", badge: null },
       { icon: List, label: "Kargo Fiyat Listesi", href: "/cargo-prices", badge: null },
+      { icon: Percent, label: "Taksit Komisyonları", href: "/installment-commissions", badge: null },
     ]
   },
   {
@@ -148,7 +149,7 @@ export function Sidebar() {
     const sections: { [key: string]: boolean } = {
       "Sipariş Yönetimi": ["/orders", "/order-questions", "/return-requests"].some(path => pathname.startsWith(path)),
       "Raporlar": ["/sales-reports", "/product-reports", "/growth-reports", "/product-comparison"].some(path => pathname.startsWith(path)),
-      "Operasyon Maliyetleri": ["/operation-costs", "/desi-calculator", "/cargo-prices"].some(path => pathname.startsWith(path)),
+      "Operasyon Maliyetleri": ["/operation-costs", "/desi-calculator", "/cargo-prices", "/installment-commissions"].some(path => pathname.startsWith(path)),
       "Ayarlar": ["/settings", "/email-settings", "/activity-logs"].some(path => pathname.startsWith(path)),
       "GİRİŞ EKRANLARI": ["/login", "/password-reset", "/register", "/verification"].some(path => pathname.startsWith(path)),
     }
