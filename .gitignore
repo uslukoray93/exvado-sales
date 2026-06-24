@@ -44,3 +44,6 @@ yarn-error.log*
 next-env.d.ts
 
 /lib/generated/prisma
+
+# Large XML files
+/public/tum_urunler.xml

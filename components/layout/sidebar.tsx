@@ -122,6 +122,12 @@ const menuItems = [
     ]
   },
   {
+    title: "Bağlantı Optimizasyonu",
+    items: [
+      { icon: Link2, label: "TY - Var / BBB Yok", href: "/link-optimization/ty-bbb", badge: null },
+    ]
+  },
+  {
     title: "Ayarlar",
     items: [
       { icon: Settings, label: "Genel Ayarlar", href: "/settings", badge: null },
@@ -150,6 +156,7 @@ export function Sidebar() {
       "Sipariş Yönetimi": ["/orders", "/order-questions", "/return-requests"].some(path => pathname.startsWith(path)),
       "Raporlar": ["/sales-reports", "/product-reports", "/growth-reports", "/product-comparison"].some(path => pathname.startsWith(path)),
       "Operasyon Maliyetleri": ["/operation-costs", "/desi-calculator", "/cargo-prices", "/installment-commissions"].some(path => pathname.startsWith(path)),
+      "Bağlantı Optimizasyonu": ["/link-optimization"].some(path => pathname.startsWith(path)),
       "Ayarlar": ["/settings", "/email-settings", "/activity-logs"].some(path => pathname.startsWith(path)),
       "GİRİŞ EKRANLARI": ["/login", "/password-reset", "/register", "/verification"].some(path => pathname.startsWith(path)),
     }
