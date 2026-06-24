@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
         // IMPORTANT: Don't send campaignNumber to let N11 generate new code
         // When changing carrier, N11 will create a new campaign code automatically
         const result = await n11SoapClient.makeOrderItemShipment(
-          orderLineId,
+          Number(orderLineId),
           shipmentCompanyId,
           undefined, // Don't send campaign number
           trackingNumber

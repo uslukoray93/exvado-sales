@@ -55,9 +55,9 @@ echo "✅ Temizlik tamamlandı!"
 echo "🚀 Next.js dev server başlatılıyor..."
 echo ""
 
-# 6. Next.js'i WEBPACK ile başlat (Turbopack devre dışı) ve PID'yi kaydet
+# 6. Next.js dev server'ı başlat ve PID'yi kaydet
 cd "$PROJECT_DIR"
-next dev --turbopack=false &
+next dev &
 SERVER_PID=$!
 
 # PID'yi dosyaya kaydet

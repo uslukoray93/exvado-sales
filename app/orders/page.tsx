@@ -2310,6 +2310,7 @@ function CargoLabelPrintWrapper({ order }: { order: Order }) {
             customerPhone={order.customerPhone}
             cargoCompany={order.cargoCompany ? (cargoCompanyNames[order.cargoCompany] || order.cargoCompany) : 'Aras Kargo'}
             platform={order.platform.toLowerCase()}
+            desi={order.desi || 0}
             items={order.items.map(item => ({
               productName: item.productName,
               quantity: item.quantity,

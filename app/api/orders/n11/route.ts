@@ -351,9 +351,10 @@ async function syncOrder(order: any) {
     mappedStatus = OrderStatus.DELIVERED
   }
 
-  // AUTO-COMPLETE: 7+ günlük DELIVERED siparişleri otomatik COMPLETED yap
+  // AUTO-COMPLETE: 14+ günlük DELIVERED siparişleri otomatik COMPLETED yap
+  // (İade/değişim süresi ve kargo gecikmelerini kapsamak için 14 gün)
   let finalStatus = mappedStatus
-  if (mappedStatus === OrderStatus.DELIVERED && daysSinceOrder >= 7) {
+  if (mappedStatus === OrderStatus.DELIVERED && daysSinceOrder >= 14) {
     console.log(`📦 Sipariş ${daysSinceOrder} gün önce teslim edildi, otomatik COMPLETED yapılıyor`)
     finalStatus = OrderStatus.COMPLETED
   }

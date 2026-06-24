@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma"
 import { OrderStatus } from "@prisma/client"
 import { SalesReportsClient } from "./sales-reports-client"
 
+export const dynamic = 'force-dynamic'
+
 // Platform type
 type Platform = "trendyol" | "n11" | "hepsiburada" | "bolbolbul"
 

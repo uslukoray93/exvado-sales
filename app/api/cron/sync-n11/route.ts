@@ -126,8 +126,11 @@ async function syncOrder(order: any): Promise<{ order: any; isNew: boolean; wasU
     : 'Unknown'
 
   // Check if order exists
-  const existingOrder = await prisma.order.findUnique({
-    where: { platformOrderId },
+  const existingOrder = await prisma.order.findFirst({
+    where: {
+      platform: 'N11',
+      platformOrderId
+    },
     include: { items: true }
   })
 
@@ -149,7 +152,7 @@ async function syncOrder(order: any): Promise<{ order: any; isNew: boolean; wasU
 
   const dbOrder = await prisma.order.upsert({
     where: {
-      platformOrderId: platformOrderId,
+      orderNumber: existingOrder?.orderNumber || platformOrderId,
     },
     update: {
       status: mappedStatus,

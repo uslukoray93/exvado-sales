@@ -251,6 +251,8 @@ export default function LinkOptimizationPage() {
             const normalized = h.toString().toUpperCase().trim()
             return normalized === 'STOKADEDI' ||
                    normalized === 'STOK ADEDI' ||
+                   normalized === 'ÜRÜN STOK ADEDI' ||
+                   normalized.includes('STOK ADEDI') ||
                    (normalized.includes('STOK') && normalized.includes('ADET'))
           })
 
@@ -371,17 +373,40 @@ export default function LinkOptimizationPage() {
 
       // Create maps for faster lookup (stok kodu -> product)
       const platform1Map = new Map(platform1Products.map(p => [p.barcode, p]))
-      const platform2Map = new Map(platform2Products.map(p => [p.barcode, p]))
 
-      // Find products in Platform 1 but not in Platform 2
-      const inPlatform1NotInPlatform2 = platform1Products.filter(
-        p => !platform2Map.has(p.barcode)
-      )
+      // IMPORTANT: When using XML mode, we need TWO comparisons:
+      // 1. TY vs BBB XML (to find products NOT in XML)
+      // 2. BBB Excel vs TY (to find products not in TY)
 
-      // Find products in Platform 2 but not in Platform 1
-      const inPlatform2NotInPlatform1 = platform2Products.filter(
-        p => !platform1Map.has(p.barcode)
-      )
+      let inPlatform1NotInPlatform2: Product[]
+      let inPlatform2NotInPlatform1: Product[]
+
+      if (useXML) {
+        // For XML mode: compare TY Excel with BBB XML (not BBB Excel!)
+        const xmlMap = new Map(bolbolbulXMLProducts.map(p => [p.barcode, p]))
+        const excelMap = new Map(bolbolbulExcelProducts.map(p => [p.barcode, p]))
+
+        // TY'de var ama BBB XML'de yok (bu ürünleri BBB'ye eklemeli)
+        inPlatform1NotInPlatform2 = platform1Products.filter(
+          p => !xmlMap.has(p.barcode)
+        )
+
+        // BBB Excel'de var ama TY'de yok (bu ürünleri TY'ye eklemeli)
+        inPlatform2NotInPlatform1 = bolbolbulExcelProducts.filter(
+          p => !platform1Map.has(p.barcode)
+        )
+      } else {
+        // For Excel-only mode: normal comparison
+        const platform2Map = new Map(platform2Products.map(p => [p.barcode, p]))
+
+        inPlatform1NotInPlatform2 = platform1Products.filter(
+          p => !platform2Map.has(p.barcode)
+        )
+
+        inPlatform2NotInPlatform1 = platform2Products.filter(
+          p => !platform1Map.has(p.barcode)
+        )
+      }
 
       // Find products with mismatched names (same stock code, different names)
       // Only show if similarity is less than 40% (more than 60% difference)
@@ -391,8 +416,13 @@ export default function LinkOptimizationPage() {
         platform2Name: string
       }> = []
 
+      // Create comparison map based on mode
+      const comparisonMap = useXML
+        ? new Map(bolbolbulExcelProducts.map(p => [p.barcode, p]))
+        : new Map(platform2Products.map(p => [p.barcode, p]))
+
       platform1Products.forEach(p1Product => {
-        const p2Product = platform2Map.get(p1Product.barcode)
+        const p2Product = comparisonMap.get(p1Product.barcode)
         if (p2Product) {
           // Skip empty/default names
           const p1Name = p1Product.productName.trim()

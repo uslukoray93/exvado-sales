@@ -252,13 +252,14 @@ async function syncOrder(order: any, trendyolClient?: any) {
     // Continue without prices - can be manually entered later
   }
 
-  // AUTO-COMPLETE: 7+ günlük DELIVERED siparişleri otomatik COMPLETED yap
+  // AUTO-COMPLETE: 14+ günlük DELIVERED siparişleri otomatik COMPLETED yap
+  // (İade/değişim süresi ve kargo gecikmelerini kapsamak için 14 gün)
   let finalStatus = mappedStatus
   if (mappedStatus === OrderStatus.DELIVERED) {
     const orderDate = new Date(order.orderDate)
     const daysSinceOrder = Math.floor((Date.now() - orderDate.getTime()) / (1000 * 60 * 60 * 24))
 
-    if (daysSinceOrder >= 7) {
+    if (daysSinceOrder >= 14) {
       console.log(`📦 Sipariş ${daysSinceOrder} gün önce teslim edildi, otomatik COMPLETED yapılıyor`)
       finalStatus = OrderStatus.COMPLETED
     }
