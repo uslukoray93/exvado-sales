@@ -67,6 +67,8 @@ type Question = {
   platform: Platform
   productName: string
   productSku: string
+  productImage?: string
+  productUrl?: string
   customerName: string
   question: string
   answer: string | null
@@ -189,6 +191,8 @@ export default function OrderQuestionsPage() {
         platform: 'trendyol' as Platform,
         productName: q.productName,
         productSku: q.productMainId || q.barcode || 'N/A',
+        productImage: q.imageUrl || undefined,
+        productUrl: q.webUrl || (q.productMainId ? `https://www.trendyol.com/p/${q.productMainId}` : undefined),
         customerName: q.userName || q.showUserName ? q.userName : `Müşteri #${q.customerId}`,
         question: q.text,
         answer: q.status === 'ANSWERED' && q.answer ? q.answer : null,
@@ -233,6 +237,8 @@ export default function OrderQuestionsPage() {
         platform: 'n11' as Platform,
         productName: q.productTitle || 'Bilinmeyen Ürün',
         productSku: String(q.productId || 'N/A'),
+        productImage: q.productImage || undefined,
+        productUrl: q.productUrl || (q.productId ? `https://www.n11.com/urun/${q.productId}` : undefined),
         customerName: q.questionSubject || 'Müşteri Sorusu',
         question: q.question || '',
         answer: q.answer || null,
@@ -280,9 +286,29 @@ export default function OrderQuestionsPage() {
     setExpandedQuestions(newExpanded)
   }
 
+  // Get next unanswered question
+  const getNextUnansweredQuestion = (currentQuestionId: string): Question | null => {
+    const pendingQuestions = questions.filter(q => q.status === 'pending')
+    const currentIndex = pendingQuestions.findIndex(q => q.id === currentQuestionId)
+
+    // Sıradaki soru varsa onu döndür
+    if (currentIndex !== -1 && currentIndex < pendingQuestions.length - 1) {
+      return pendingQuestions[currentIndex + 1]
+    }
+
+    // Sıradaki soru yoksa başa dön
+    if (pendingQuestions.length > 1) {
+      return pendingQuestions[0]
+    }
+
+    return null
+  }
+
   // Answer question
   const handleAnswerQuestion = async () => {
     if (!answerSheet.question || !answerText.trim()) return
+
+    const currentQuestionId = answerSheet.question.id
 
     // N11 sorusuysa API'ye gönder
     if (answerSheet.question.platform === 'n11') {
@@ -307,7 +333,7 @@ export default function OrderQuestionsPage() {
         })
 
         // Soruyu güncelle
-        setQuestions(questions.map(q =>
+        const updatedQuestions = questions.map(q =>
           q.id === answerSheet.question!.id
             ? {
                 ...q,
@@ -316,7 +342,19 @@ export default function OrderQuestionsPage() {
                 answeredDate: new Date().toISOString().replace('T', ' ').substring(0, 16),
               }
             : q
-        ))
+        )
+        setQuestions(updatedQuestions)
+
+        // Sıradaki soruyu aç
+        const nextQuestion = getNextUnansweredQuestion(currentQuestionId)
+        if (nextQuestion) {
+          setAnswerText("Merhaba efendim,\n\nKeyifli alışverişler dileriz.")
+          setAnswerSheet({ open: true, question: nextQuestion })
+        } else {
+          setAnswerSheet({ open: false, question: null })
+          setAnswerText("Merhaba efendim,\n\nKeyifli alışverişler dileriz.")
+        }
+        return
       } catch (error: any) {
         console.error('Cevap gönderilemedi:', error)
         toast({
@@ -349,7 +387,7 @@ export default function OrderQuestionsPage() {
         })
 
         // Soruyu güncelle
-        setQuestions(questions.map(q =>
+        const updatedQuestions = questions.map(q =>
           q.id === answerSheet.question!.id
             ? {
                 ...q,
@@ -358,7 +396,19 @@ export default function OrderQuestionsPage() {
                 answeredDate: new Date().toISOString().replace('T', ' ').substring(0, 16),
               }
             : q
-        ))
+        )
+        setQuestions(updatedQuestions)
+
+        // Sıradaki soruyu aç
+        const nextQuestion = getNextUnansweredQuestion(currentQuestionId)
+        if (nextQuestion) {
+          setAnswerText("Merhaba efendim,\n\nKeyifli alışverişler dileriz.")
+          setAnswerSheet({ open: true, question: nextQuestion })
+        } else {
+          setAnswerSheet({ open: false, question: null })
+          setAnswerText("Merhaba efendim,\n\nKeyifli alışverişler dileriz.")
+        }
+        return
       } catch (error: any) {
         console.error('Cevap gönderilemedi:', error)
         toast({
@@ -372,7 +422,7 @@ export default function OrderQuestionsPage() {
       }
     } else {
       // Diğer platformlar için sadece local güncelleme
-      setQuestions(questions.map(q =>
+      const updatedQuestions = questions.map(q =>
         q.id === answerSheet.question!.id
           ? {
               ...q,
@@ -381,11 +431,19 @@ export default function OrderQuestionsPage() {
               answeredDate: new Date().toISOString().replace('T', ' ').substring(0, 16),
             }
           : q
-      ))
-    }
+      )
+      setQuestions(updatedQuestions)
 
-    setAnswerSheet({ open: false, question: null })
-    setAnswerText("Merhaba efendim,\n\nKeyifli alışverişler dileriz.")
+      // Sıradaki soruyu aç
+      const nextQuestion = getNextUnansweredQuestion(currentQuestionId)
+      if (nextQuestion) {
+        setAnswerText("Merhaba efendim,\n\nKeyifli alışverişler dileriz.")
+        setAnswerSheet({ open: true, question: nextQuestion })
+      } else {
+        setAnswerSheet({ open: false, question: null })
+        setAnswerText("Merhaba efendim,\n\nKeyifli alışverişler dileriz.")
+      }
+    }
   }
 
   // Filter questions by tab
@@ -622,9 +680,33 @@ export default function OrderQuestionsPage() {
                               </div>
                             </TableCell>
                             <TableCell className="text-xs font-medium text-gray-900 dark:text-gray-100 py-2 h-12">
-                              <div>
-                                <p className="font-semibold">{question.productName}</p>
-                                <p className="text-[10px] text-gray-500 dark:text-gray-400 font-mono">{question.productSku}</p>
+                              <div className="flex items-center gap-2">
+                                {question.productImage && (
+                                  <div className="w-10 h-10 bg-white dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700 p-0.5 flex-shrink-0">
+                                    <Image
+                                      src={question.productImage}
+                                      alt={question.productName}
+                                      width={40}
+                                      height={40}
+                                      className="object-contain w-full h-full"
+                                    />
+                                  </div>
+                                )}
+                                <div className="min-w-0 flex-1">
+                                  {question.productUrl ? (
+                                    <a
+                                      href={question.productUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 hover:underline block truncate"
+                                    >
+                                      {question.productName}
+                                    </a>
+                                  ) : (
+                                    <p className="font-semibold truncate">{question.productName}</p>
+                                  )}
+                                  <p className="text-[10px] text-gray-500 dark:text-gray-400 font-mono">SKU: {question.productSku}</p>
+                                </div>
                               </div>
                             </TableCell>
                             <TableCell className="text-xs text-gray-900 dark:text-gray-100 py-2 h-12">
@@ -724,26 +806,63 @@ export default function OrderQuestionsPage() {
               <div className="space-y-6">
                 {/* Product Info */}
                 <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-16 h-12 bg-white dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700 p-1.5 flex items-center justify-center">
-                      <Image
-                        src={platformLogos[answerSheet.question.platform]}
-                        alt={answerSheet.question.platform}
-                        width={50}
-                        height={25}
-                        className="object-contain"
-                      />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                        {answerSheet.question.productName}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">
-                        {answerSheet.question.productSku}
-                      </p>
+                  <div className="flex items-start gap-4 mb-3">
+                    {/* Product Image */}
+                    {answerSheet.question.productImage ? (
+                      <div className="w-20 h-20 bg-white dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700 p-1 flex-shrink-0">
+                        <Image
+                          src={answerSheet.question.productImage}
+                          alt={answerSheet.question.productName}
+                          width={80}
+                          height={80}
+                          className="object-contain w-full h-full"
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-16 h-12 bg-white dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700 p-1.5 flex items-center justify-center flex-shrink-0">
+                        <Image
+                          src={platformLogos[answerSheet.question.platform]}
+                          alt={answerSheet.question.platform}
+                          width={50}
+                          height={25}
+                          className="object-contain"
+                        />
+                      </div>
+                    )}
+
+                    {/* Product Details */}
+                    <div className="flex-1 min-w-0">
+                      {answerSheet.question.productUrl ? (
+                        <a
+                          href={answerSheet.question.productUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline block mb-1"
+                        >
+                          {answerSheet.question.productName}
+                        </a>
+                      ) : (
+                        <p className="text-sm font-semibold text-gray-900 dark:text-white mb-1">
+                          {answerSheet.question.productName}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-xs text-gray-500 dark:text-gray-400 font-mono bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">
+                          SKU: {answerSheet.question.productSku}
+                        </p>
+                        <div className="w-12 h-6 bg-white dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700 p-0.5 flex items-center justify-center">
+                          <Image
+                            src={platformLogos[answerSheet.question.platform]}
+                            alt={answerSheet.question.platform}
+                            width={40}
+                            height={20}
+                            className="object-contain"
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                  <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 pt-2 border-t border-gray-200 dark:border-gray-700">
                     <User className="h-3 w-3" />
                     <span>{answerSheet.question.customerName}</span>
                     <span className="mx-2">•</span>
