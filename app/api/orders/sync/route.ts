@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 /**
- * GET /api/orders/sync
- * Sync orders from all platforms (Trendyol, N11, Bolbolbul)
+ * Sync handler - handles both GET and POST
  */
-export async function GET(request: NextRequest) {
+async function syncHandler(request: NextRequest) {
   try {
-    const baseUrl = request.nextUrl.origin
+    // Use localhost for server-side calls, origin for client-side
+    const baseUrl = request.nextUrl.origin || 'http://localhost:3000'
 
     // Sync all platforms in parallel - AKILLI SYNC (sadece yeni/güncellenen siparişler)
     const [trendyolResult, n11Result, bolbolbulResult] = await Promise.allSettled([
@@ -72,4 +72,13 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
+}
+
+// Export both GET and POST using the same handler
+export async function GET(request: NextRequest) {
+  return syncHandler(request)
+}
+
+export async function POST(request: NextRequest) {
+  return syncHandler(request)
 }
