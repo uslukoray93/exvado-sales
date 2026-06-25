@@ -52,7 +52,6 @@ import {
 } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
-import Image from "next/image"
 import { useToast } from "@/hooks/use-toast"
 
 // Platform type
@@ -191,8 +190,8 @@ export default function OrderQuestionsPage() {
         platform: 'trendyol' as Platform,
         productName: q.productName,
         productSku: q.productMainId || q.barcode || 'N/A',
-        productImage: q.imageUrl || undefined,
-        productUrl: q.webUrl || (q.productMainId ? `https://www.trendyol.com/p/${q.productMainId}` : undefined),
+        productImage: q.imageUrl || undefined, // Sadece API'den gelen görsel
+        productUrl: q.webUrl || undefined, // Sadece API'den gelen link
         customerName: q.userName || q.showUserName ? q.userName : `Müşteri #${q.customerId}`,
         question: q.text,
         answer: q.status === 'ANSWERED' && q.answer ? q.answer : null,
@@ -237,8 +236,8 @@ export default function OrderQuestionsPage() {
         platform: 'n11' as Platform,
         productName: q.productTitle || 'Bilinmeyen Ürün',
         productSku: String(q.productId || 'N/A'),
-        productImage: q.productImage || undefined,
-        productUrl: q.productUrl || (q.productId ? `https://www.n11.com/urun/${q.productId}` : undefined),
+        productImage: q.productImage || undefined, // Sadece API'den gelen görsel
+        productUrl: q.productUrl || undefined, // Sadece API'den gelen link
         customerName: q.questionSubject || 'Müşteri Sorusu',
         question: q.question || '',
         answer: q.answer || null,
@@ -670,12 +669,10 @@ export default function OrderQuestionsPage() {
                             </TableCell>
                             <TableCell className="py-2 h-12">
                               <div className="flex items-center justify-center w-20 h-10 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 p-1.5">
-                                <Image
+                                <img
                                   src={platformLogos[question.platform]}
                                   alt={question.platform}
-                                  width={60}
-                                  height={30}
-                                  className="object-contain"
+                                  className="object-contain w-full h-full"
                                 />
                               </div>
                             </TableCell>
@@ -683,11 +680,9 @@ export default function OrderQuestionsPage() {
                               <div className="flex items-center gap-2">
                                 {question.productImage && (
                                   <div className="w-10 h-10 bg-white dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700 p-0.5 flex-shrink-0">
-                                    <Image
+                                    <img
                                       src={question.productImage}
                                       alt={question.productName}
-                                      width={40}
-                                      height={40}
                                       className="object-contain w-full h-full"
                                     />
                                   </div>
@@ -810,22 +805,18 @@ export default function OrderQuestionsPage() {
                     {/* Product Image */}
                     {answerSheet.question.productImage ? (
                       <div className="w-20 h-20 bg-white dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700 p-1 flex-shrink-0">
-                        <Image
+                        <img
                           src={answerSheet.question.productImage}
                           alt={answerSheet.question.productName}
-                          width={80}
-                          height={80}
                           className="object-contain w-full h-full"
                         />
                       </div>
                     ) : (
                       <div className="w-16 h-12 bg-white dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700 p-1.5 flex items-center justify-center flex-shrink-0">
-                        <Image
+                        <img
                           src={platformLogos[answerSheet.question.platform]}
                           alt={answerSheet.question.platform}
-                          width={50}
-                          height={25}
-                          className="object-contain"
+                          className="object-contain w-full h-full"
                         />
                       </div>
                     )}
@@ -851,12 +842,10 @@ export default function OrderQuestionsPage() {
                           SKU: {answerSheet.question.productSku}
                         </p>
                         <div className="w-12 h-6 bg-white dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700 p-0.5 flex items-center justify-center">
-                          <Image
+                          <img
                             src={platformLogos[answerSheet.question.platform]}
                             alt={answerSheet.question.platform}
-                            width={40}
-                            height={20}
-                            className="object-contain"
+                            className="object-contain w-full h-full"
                           />
                         </div>
                       </div>
