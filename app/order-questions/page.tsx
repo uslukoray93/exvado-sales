@@ -190,8 +190,8 @@ export default function OrderQuestionsPage() {
         platform: 'trendyol' as Platform,
         productName: q.productName,
         productSku: q.productMainId || q.barcode || 'N/A',
-        productImage: q.imageUrl || undefined, // Sadece API'den gelen görsel
-        productUrl: q.webUrl || undefined, // Sadece API'den gelen link
+        productImage: q.imageUrl || undefined, // XML'den gelen görsel
+        productUrl: undefined, // Link yok
         customerName: q.userName || q.showUserName ? q.userName : `Müşteri #${q.customerId}`,
         question: q.text,
         answer: q.status === 'ANSWERED' && q.answer ? q.answer : null,
@@ -236,8 +236,8 @@ export default function OrderQuestionsPage() {
         platform: 'n11' as Platform,
         productName: q.productTitle || 'Bilinmeyen Ürün',
         productSku: String(q.productId || 'N/A'),
-        productImage: q.productImage || undefined, // Sadece API'den gelen görsel
-        productUrl: q.productUrl || undefined, // Sadece API'den gelen link
+        productImage: q.imageUrl || undefined, // XML'den gelen görsel
+        productUrl: undefined, // Link yok
         customerName: q.questionSubject || 'Müşteri Sorusu',
         question: q.question || '',
         answer: q.answer || null,

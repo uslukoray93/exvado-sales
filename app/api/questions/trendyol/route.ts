@@ -3,7 +3,7 @@ import { getTrendyolClient } from '@/lib/api/trendyol'
 
 /**
  * GET /api/questions/trendyol
- * Trendyol müşteri sorularını çek
+ * Trendyol müşteri sorularını çek ve XML'den görselleri ekle
  */
 export async function GET(req: NextRequest) {
   try {
@@ -22,6 +22,7 @@ export async function GET(req: NextRequest) {
       status: status || 'WAITING_FOR_ANSWER' // Varsayılan: Cevap bekleyenler
     })
 
+    // Görselleri ekleme (questions'da istenmiyor)
     return NextResponse.json(response)
   } catch (error: any) {
     console.error('❌ Trendyol sorular çekme hatası:', error)

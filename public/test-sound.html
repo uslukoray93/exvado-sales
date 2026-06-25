@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sound Test</title>
+</head>
+<body>
+    <h1>Sound Test</h1>
+    <button onclick="playSound()">Play Notification Sound</button>
+    <p id="status"></p>
+
+    <script>
+        function playSound() {
+            const status = document.getElementById('status');
+            status.textContent = 'Playing...';
+
+            const audio = new Audio('/sounds/notification.webm');
+            audio.volume = 1.0;
+            audio.play()
+                .then(() => {
+                    status.textContent = '✅ Sound played successfully!';
+                    console.log('✅ Sound played');
+                })
+                .catch(err => {
+                    status.textContent = '❌ Error: ' + err.message;
+                    console.error('❌ Error:', err);
+                });
+        }
+    </script>
+</body>
+</html>

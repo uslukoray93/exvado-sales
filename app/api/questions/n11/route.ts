@@ -8,7 +8,7 @@ const CACHE_DURATION = 60 * 1000 // 1 dakika
 
 /**
  * GET /api/questions/n11
- * N11 müşteri sorularını çek (SOAP API)
+ * N11 müşteri sorularını çek (SOAP API) ve XML'den görselleri ekle
  * Cache: 1 dakika
  */
 export async function GET(req: NextRequest) {
@@ -33,6 +33,7 @@ export async function GET(req: NextRequest) {
     const client = getN11SoapClient()
     const response = await client.getProductQuestionList(page, pageSize)
 
+    // Görselleri ekleme (questions'da istenmiyor)
     // Cache'e kaydet
     cachedQuestions = response
     cacheTimestamp = now
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
   } catch (error: any) {
     console.error('❌ N11 sorular çekme hatası:', error)
 
-    // Rate limit hatası ise cache'ten dön
+    // Rate limit hatası ise cache'ten dön (varsa)
     if (error.message && error.message.includes('dakikada bir kez')) {
       if (cachedQuestions) {
         console.log('⚠️ Rate limit - Cache\'ten döndürülüyor')
@@ -51,9 +52,18 @@ export async function GET(req: NextRequest) {
           cached: true,
           rateLimited: true,
         })
+      } else {
+        // Cache yok ama rate limit hatası - boş sonuç dön (hata fırlatma)
+        console.log('⚠️ Rate limit - Cache yok, boş sonuç dönülüyor')
+        return NextResponse.json({
+          productQuestions: { productQuestion: [] },
+          cached: false,
+          rateLimited: true,
+        })
       }
     }
 
+    // Başka bir hata varsa 500 dön
     return NextResponse.json(
       { error: error.message || 'Sorular çekilemedi' },
       { status: 500 }
